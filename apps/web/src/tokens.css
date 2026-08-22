@@ -2,8 +2,7 @@
  * Design tokens — Claymorphism. See design-system/MASTER.md.
  *
  * This is the only file allowed to contain raw colour, radius or shadow
- * values. Everything else references these, so swapping the palette (for
- * Orbit's, when those tokens surface) is a one-file change.
+ * values. Everything else references these, so a rebrand is a one-file change.
  *
  * Theming has three states. An explicit choice stamps data-theme on the root;
  * "system" removes it so prefers-color-scheme decides. Every token therefore

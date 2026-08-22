@@ -65,6 +65,6 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
 
 ## Next up
 
-1. **Phase 8 — design pass.** Claymorphism tokens carried over from Orbit.
+1. ~~Phase 8 — design pass.~~ Done: see design-system/MASTER.md.
 2. **Phase 9 — deploy.** Vercel + Render + Turso + Resend, real domain, then
    restore the repo's homepage link.

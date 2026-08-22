@@ -3,13 +3,6 @@
 The visual language: soft, rounded, tactile surfaces that look pressed out of
 clay. Depth comes from layered shadow rather than borders or hard edges.
 
-> **Reconciliation note.** The master plan calls for reusing Orbit's
-> Claymorphism token set so both projects share an identity. Those tokens are
-> not in this repository, so this file defines an equivalent system from first
-> principles. If Orbit's real values turn up, replace the primitives in
-> `tokens.css` — every component reads from them, so nothing else needs
-> touching.
-
 ## What makes it clay, specifically
 
 Three rules. Break any one and it stops reading as clay and starts reading as
@@ -65,4 +58,4 @@ is disabled wholesale under `prefers-reduced-motion`.
 
 `tokens.css` defines the primitives and is imported first. Components reference
 tokens only — a hard-coded colour, radius or shadow anywhere else is a bug, and
-the reason is that swapping in Orbit's palette should be a one-file change.
+the reason is that a rebrand should be a one-file change.

@@ -24,6 +24,13 @@ version of it.
 | **OAuth verification** | Any app requesting `gmail.readonly`, `gmail.modify`, or `gmail.send` and wanting more than ~100 total users | Free. Needs: a public privacy policy + terms of service, your domain verified in Google Search Console, OAuth consent screen fully branded (name, logo, support email), a short demo video showing exactly how each requested scope is used, then Google review — typically a few weeks elapsed. |
 | **CASA security assessment** (extra, on top of verification) | Only triggered if you request a **restricted** scope — specifically the full-mailbox scope `https://mail.google.com/`, which is what true permanent-delete requires | Sensitive-tier scopes (`gmail.readonly`, `gmail.modify`, `gmail.send`) generally skip this entirely. If you do end up needing the restricted scope later, current Google guidance lets many apps complete Tier 2 CASA via a self-assessment questionnaire (no paid third-party auditor needed for most apps at this tier) — but it's still an extra step worth avoiding for v1. |
 
+> ⚠️ **Superseded.** The trash-only decision below was reversed during Phase 2.
+> Hive now requests `https://mail.google.com/` and does offer permanent
+> deletion. See `docs/decisions/0002-permanent-delete.md` for the reasoning and
+> the cost that comes with it. Everything else in this section still holds —
+> including that the restricted scope is free in Testing mode and only becomes
+> a CASA question at public launch.
+
 **Design decision that keeps you out of the expensive lane:** the hosted
 product offers **trash, not permanent delete**. Gmail's own Trash already
 auto-empties after 30 days, so "delete" from a user's point of view still
@@ -247,9 +254,9 @@ no cap, no unverified-app warning screen. This is the actual finish line for
 
 ## 7. Design
 
-Unchanged — reuse the Claymorphism token set and theming approach from
-Orbit's plan (§10 there) for a consistent visual identity across your public
-projects.
+Claymorphism — soft, rounded, tactile surfaces with depth from layered shadow
+rather than borders. Hive owns its own token set rather than sharing one with
+any other project; see `design-system/MASTER.md` and `apps/web/src/tokens.css`.
 
 ---
 
@@ -350,7 +357,7 @@ hive/
 | **5 — Cleanup rules** | Rule builder, manual run, then scheduled | A saved rule correctly trashes only matching messages |
 | **6 — Open-source readiness** | LICENSE, CONTRIBUTING.md, SELF-HOSTING.md, .env.example, issue templates | A stranger could clone the repo and run their own instance from docs alone |
 | **7 — Verification prep & submission** | Privacy/terms pages, domain verification, consent screen branding, demo video, submit | Verification request submitted to Google; app keeps running in Testing mode meanwhile |
-| **8 — Design pass** | Claymorphism UI, theming | Consistent with Orbit's visual language, responsive |
+| **8 — Design pass** | Claymorphism UI, theming | Coherent token-driven visual language, responsive |
 | **9 — Hardening + public launch** | Rate limiting, full Playwright suite in CI, hive.harshitsaini.in live, verification (hopefully) approved | Docs complete, green CI, live domain, ideally past the 100-user cap |
 
 **Timeline:** hands-on build time is actually shorter than v1 (~7–8 weeks at
