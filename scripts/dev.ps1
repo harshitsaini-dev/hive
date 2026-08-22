@@ -117,6 +117,34 @@ function Start-Hive {
     return 1
   }
 
+  <#
+    Clear the ports before starting, not just the PID files.
+
+    A process whose PID file was lost still holds its port. The new server then
+    fails to bind, the old one keeps answering the health check, and startup
+    reports success while serving stale code — which presents as bizarre
+    runtime errors rather than as a startup failure. That is a genuinely
+    horrible hour to debug, so it is checked up front.
+  #>
+  foreach ($port in 3000, 5173) {
+    $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    if (-not $conn) { continue }
+
+    $owner = $conn.OwningProcess | Select-Object -First 1
+    $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
+    if (-not $proc) { continue }
+
+    if ($proc.CommandLine -and $proc.CommandLine.Replace('/', '\') -like "*$Root*") {
+      Write-Host "  clearing a stale Hive process on port $port (PID $owner)" -ForegroundColor Yellow
+      & taskkill /PID $owner /T /F *> $null
+      Start-Sleep -Milliseconds 500
+    } else {
+      Write-Host "Port $port is held by $($proc.Name) (PID $owner), which is not Hive." -ForegroundColor Red
+      Write-Host 'Stop it, or change the port, then try again.'
+      return 1
+    }
+  }
+
   New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
   if (-not (Test-Path (Join-Path $Root 'node_modules'))) {
