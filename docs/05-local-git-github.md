@@ -83,11 +83,35 @@ gh auth login
 Answer: `GitHub.com` → `HTTPS` → `Yes` (authenticate git with gh credentials)
 → `Login with a web browser` → copy the one-time code → paste in the browser.
 
-Confirm the token landed in the project, not your home directory:
+Confirm the config landed in the project, not your home directory:
 ```bash
 gh auth status
-ls .gh-config          # hosts.yml should exist here
+ls .gh-config          # hosts.yml and config.yml should exist here
 ```
+
+### Where the token actually lives
+
+On Windows, `gh auth status` reports `(keyring)` — the token is stored in the
+Windows Credential Manager, **not** in `.gh-config/hosts.yml`. That file only
+records the username and git protocol.
+
+This is the better default: the token is encrypted by the OS rather than
+sitting in plaintext on disk. The honest caveat is that a keyring entry is
+keyed by hostname and scoped to your Windows user, not to this folder — so it
+is not *strictly* project-local the way `.gh-config/` is. With a single GitHub
+account that distinction has no practical effect.
+
+`gh auth login --insecure-storage` would force the token into `hosts.yml` for
+true file-locality, at the cost of a plaintext token on disk. Not recommended.
+
+### Global hooks apply here too
+
+This machine sets `core.hooksPath` globally to `~/.githooks`, which includes a
+`commit-msg` hook that strips Claude/Anthropic `Co-Authored-By` trailers and
+chains to any repo-local hook. That is intentional and reinforces the
+attribution rule in `CLAUDE.md` — but it is machine-global state, so a fresh
+clone on another machine will not have it. Do not treat it as the project's
+only guard.
 
 ## 4. Set the local commit identity
 
