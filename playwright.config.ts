@@ -20,7 +20,9 @@ export default defineConfig({
   reporter: isCI ? [['github'], ['html', { open: 'never' }]] : [['list'], ['html', { open: 'never' }]],
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: 'https://localhost:5173',
+    // The local CA is not in the browser profile Playwright spawns.
+    ignoreHTTPSErrors: true,
     // Headed locally by project rule — headless passes hide layout and
     // overlay failures. See docs/06-testing.md.
     headless: isCI,
@@ -34,7 +36,13 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        launchOptions: { slowMo },
+        launchOptions: {
+          slowMo,
+          // ignoreHTTPSErrors alone is not enough for service workers: Chrome
+          // only treats an origin as a secure context when the certificate is
+          // actually trusted, and refuses to register a worker otherwise.
+          args: ['--ignore-certificate-errors'],
+        },
       },
     },
   ],
@@ -42,7 +50,8 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev:server',
-      url: 'http://localhost:3000/health',
+      url: 'https://localhost:3000/health',
+      ignoreHTTPSErrors: true,
       reuseExistingServer: !isCI,
       timeout: 60_000,
       stdout: 'pipe',
@@ -50,7 +59,8 @@ export default defineConfig({
     },
     {
       command: 'npm run dev:web',
-      url: 'http://localhost:5173',
+      url: 'https://localhost:5173',
+      ignoreHTTPSErrors: true,
       reuseExistingServer: !isCI,
       timeout: 60_000,
     },

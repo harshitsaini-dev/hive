@@ -102,7 +102,7 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Enter your code' })).toBeVisible()
 
     const codeResponse = await request.get(
-      `http://localhost:3000/auth/test/last-code?email=${encodeURIComponent(email)}`,
+      `https://localhost:3000/auth/test/last-code?email=${encodeURIComponent(email)}`,
     )
     const { code } = (await codeResponse.json()) as { code: string }
 

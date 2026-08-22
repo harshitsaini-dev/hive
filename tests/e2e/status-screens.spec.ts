@@ -86,7 +86,7 @@ test.describe('status screens', () => {
     await page.getByRole('button', { name: 'Send me a code' }).click()
 
     const codeResponse = await request.get(
-      `http://localhost:3000/auth/test/last-code?email=${encodeURIComponent(email)}`,
+      `https://localhost:3000/auth/test/last-code?email=${encodeURIComponent(email)}`,
     )
     const { code } = (await codeResponse.json()) as { code: string }
 
@@ -122,7 +122,7 @@ test.describe('status screens', () => {
 
 test.describe('installability', () => {
   test('serves a valid web app manifest', async ({ request }) => {
-    const response = await request.get('http://localhost:5173/manifest.webmanifest')
+    const response = await request.get('https://localhost:5173/manifest.webmanifest')
     expect(response.ok()).toBe(true)
 
     const manifest = (await response.json()) as {
@@ -147,11 +147,11 @@ test.describe('installability', () => {
 
   test('every declared icon actually exists', async ({ request }) => {
     const manifest = (await (
-      await request.get('http://localhost:5173/manifest.webmanifest')
+      await request.get('https://localhost:5173/manifest.webmanifest')
     ).json()) as { icons: { src: string }[] }
 
     for (const icon of manifest.icons) {
-      const response = await request.get(`http://localhost:5173${icon.src}`)
+      const response = await request.get(`https://localhost:5173${icon.src}`)
       expect(response.ok(), `${icon.src} should be served`).toBe(true)
       expect(response.headers()['content-type']).toContain('image/png')
     }
@@ -206,7 +206,7 @@ test.describe('link previews', () => {
   })
 
   test('the preview image is served at the declared size', async ({ request }) => {
-    const response = await request.get('http://localhost:5173/og-image.png')
+    const response = await request.get('https://localhost:5173/og-image.png')
     expect(response.ok()).toBe(true)
     expect(response.headers()['content-type']).toContain('image/png')
 

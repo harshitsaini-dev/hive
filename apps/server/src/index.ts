@@ -1,4 +1,5 @@
-import { createServer } from 'node:http'
+import { createServer as createHttpServer } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
@@ -6,6 +7,7 @@ import { WebSocketServer } from 'ws'
 import { db } from '@hive/db'
 import { config } from './config.js'
 import { errorHandler, asyncRoute, notFound } from './errors.js'
+import { loadDevTls } from './tls.js'
 import { authRouter } from './routes/auth.js'
 import { accountsRouter, oauthCallback } from './routes/accounts.js'
 import { messagesRouter } from './routes/messages.js'
@@ -63,7 +65,11 @@ app.get(new URL(config.GOOGLE_REDIRECT_URI).pathname, ...oauthCallback)
 app.use((_req, _res, next) => next(notFound('No such endpoint')))
 app.use(errorHandler)
 
-const server = createServer(app)
+const tls = loadDevTls()
+const scheme = tls ? 'https' : 'http'
+
+// TLS locally, plain HTTP in production where the platform terminates it.
+const server = tls ? createHttpsServer(tls, app) : createHttpServer(app)
 
 /**
  * Bulk-trash progress. Attached to the same HTTP server so there is one port
@@ -78,7 +84,13 @@ wss.on('connection', (socket) => {
 // Cleanup-rule scheduling is registered here in Phase 5.
 
 server.listen(config.PORT, () => {
-  console.log(`hive server on http://localhost:${config.PORT}  [${config.NODE_ENV}]`)
+  console.log(`hive server on ${scheme}://localhost:${config.PORT}  [${config.NODE_ENV}]`)
+  if (!tls && !config.isProduction) {
+    console.warn(
+      'no local certificate found — run: sh scripts/make-cert.sh\n' +
+        '  (Google will not issue the restricted scope over plain HTTP)',
+    )
+  }
   if (!config.canSendEmail) {
     console.warn('RESEND_API_KEY is unset — login codes will not be delivered.')
   }

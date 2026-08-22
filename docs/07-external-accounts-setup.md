@@ -61,8 +61,37 @@ While the app is unverified it runs in Testing mode, capped at 100 users.
 - [ ] https://console.cloud.google.com/auth/clients → **Create client**
 - [ ] Type: **Web application**
 - [ ] Name: `Hive local dev`
-- [ ] Authorised redirect URI: `http://localhost:3000/auth/google/callback`
+- [ ] Authorised redirect URI: `https://localhost:3000/auth/google/callback`
 - [ ] Create, then copy the **Client ID** and **Client secret**
+
+> **HTTPS, including on localhost.** A project that requests a restricted scope
+> may not have *any* `http://` redirect URI on *any* of its clients — Google
+> greys out the restricted scopes and names the offending client. If you see
+> that warning, the fix is to remove the `http://` URI entirely, not to add the
+> HTTPS one alongside it.
+
+### 1g. Local certificate
+
+Because of the rule above, the dev servers run over TLS:
+
+```bash
+sh scripts/make-cert.sh
+```
+
+Then trust the generated CA, or every page load warns:
+
+```powershell
+certutil -user -addstore Root .certs\ca.crt
+```
+
+No administrator rights needed — it goes in your user store, which Chrome and
+Edge both read. Firefox keeps its own: Settings → Privacy & Security →
+Certificates → View Certificates → Authorities → Import `.certs/ca.crt`.
+
+To undo: `certutil -user -delstore Root "Hive local development CA"`.
+
+`.certs/` is gitignored. Anyone cloning the repo runs the script to get their
+own — the certificate is per-machine and must never be committed.
 
 Record them:
 ```

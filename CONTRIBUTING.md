@@ -8,9 +8,16 @@ Thanks for taking a look. Issues and pull requests are both welcome.
 git clone https://github.com/harshitsaini-dev/hive.git
 cd hive
 npm install
+sh scripts/make-cert.sh   # local TLS — see below
 cp .env.example .env
 npm run dev
 ```
+
+**The dev servers run over HTTPS**, because Google refuses the restricted
+Gmail scope to any OAuth client with an `http://` redirect URI. `make-cert.sh`
+generates a local CA; trust it with
+`certutil -user -addstore Root .certs\ca.crt` on Windows, or your platform
+equivalent, to stop the browser warning on every load.
 
 Every variable in `.env.example` is commented with where to get it.
 [docs/07-external-accounts-setup.md](docs/07-external-accounts-setup.md) is the

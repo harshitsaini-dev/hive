@@ -40,6 +40,11 @@ jobs:
 
       - run: npm ci
 
+      # Dev and CI both run over TLS, because Google will not issue the
+      # restricted scope to a client with an http:// redirect URI.
+      - name: Generate local certificates
+        run: sh scripts/make-cert.sh
+
       - run: npx playwright install --with-deps chromium
 
       - name: Migrate the test database
@@ -55,7 +60,7 @@ jobs:
           CI: 'true'
           GOOGLE_CLIENT_ID: ci.apps.googleusercontent.com
           GOOGLE_CLIENT_SECRET: ci-not-a-real-secret
-          GOOGLE_REDIRECT_URI: http://localhost:3000/auth/google/callback
+          GOOGLE_REDIRECT_URI: https://localhost:3000/auth/google/callback
           TOKEN_ENCRYPTION_KEY: Y2ktb25seS10b2tlbi1rZXktbm90LWZvci1yZWFsICA=
           SESSION_SECRET: Y2ktb25seS1zZXNzaW9uLXNlY3JldC1ub3QtcmVhbCA=
 

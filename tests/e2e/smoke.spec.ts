@@ -37,12 +37,12 @@ test.describe('application boots', () => {
   })
 
   test('the API reports healthy and ready', async ({ request }) => {
-    const health = await request.get('http://localhost:3000/health')
+    const health = await request.get('https://localhost:3000/health')
     expect(health.ok()).toBe(true)
     expect(await health.json()).toMatchObject({ status: 'ok' })
 
     // /ready touches the database, so this also proves migrations ran.
-    const ready = await request.get('http://localhost:3000/ready')
+    const ready = await request.get('https://localhost:3000/ready')
     expect(ready.ok()).toBe(true)
     expect(await ready.json()).toMatchObject({ database: 'ok' })
   })
@@ -50,7 +50,7 @@ test.describe('application boots', () => {
   test('an unknown endpoint returns the standard error envelope', async ({
     request,
   }) => {
-    const response = await request.get('http://localhost:3000/nope')
+    const response = await request.get('https://localhost:3000/nope')
     expect(response.status()).toBe(404)
     expect(await response.json()).toMatchObject({
       error: { code: 'not_found' },

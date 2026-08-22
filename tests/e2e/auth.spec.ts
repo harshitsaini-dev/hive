@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
 
-const API = 'http://localhost:3000'
+const API = 'https://localhost:3000'
 
 /** A fresh address per test, so runs never collide over rate limits or state. */
 function uniqueEmail(label: string): string {

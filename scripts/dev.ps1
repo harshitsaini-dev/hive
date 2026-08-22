@@ -25,8 +25,8 @@ $LogDir  = Join-Path $Root '.logs'
 $Npm = 'npm.cmd'
 
 $Services = @(
-  @{ Name = 'server'; Script = 'dev:server'; Url = 'http://localhost:3000/health'; Label = 'API'; Shown = 'http://localhost:3000' }
-  @{ Name = 'web';    Script = 'dev:web';    Url = 'http://localhost:5173';        Label = 'Web'; Shown = 'http://localhost:5173' }
+  @{ Name = 'server'; Script = 'dev:server'; Url = 'https://localhost:3000/health'; Label = 'API'; Shown = 'https://localhost:3000' }
+  @{ Name = 'web';    Script = 'dev:web';    Url = 'https://localhost:5173';       Label = 'Web'; Shown = 'https://localhost:5173' }
 )
 
 function Get-PidFile([string] $Name) { Join-Path $LogDir "$Name.pid" }
@@ -49,16 +49,21 @@ function Get-RunningPid([string] $Name) {
 }
 
 function Wait-ForUrl([string] $Url, [int] $TimeoutSeconds = 25) {
+  # curl.exe rather than Invoke-WebRequest.
+  #
+  # Windows PowerShell 5.1 runs on .NET Framework, which cannot negotiate
+  # TLS 1.3. The server offers it and the handshake dies with a thoroughly
+  # misleading "the underlying connection was closed" — the server is fine.
+  # curl.exe ships with Windows 10+, speaks modern TLS, and -k sidesteps the
+  # question of whether the local CA has been trusted yet.
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
   while ((Get-Date) -lt $deadline) {
-    try {
-      $response = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 2
-      if ($response.StatusCode -eq 200) { return $true }
-    } catch {
-      # Not up yet. Keep waiting until the deadline.
-    }
+    $code = & curl.exe -s -k -o NUL -w '%{http_code}' --max-time 2 $Url 2>$null
+    if ($code -eq '200') { return $true }
     Start-Sleep -Milliseconds 600
   }
+
   return $false
 }
 
