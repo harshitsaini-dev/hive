@@ -30,6 +30,11 @@ const FEATURES = [
     title: 'Send from any of them',
     body: 'Compose from whichever identity fits, with a quota indicator so a bulk send never fails silently against Google’s daily limit.',
   },
+  {
+    Icon: ShieldIcon,
+    title: 'A Trash you control',
+    body: 'Browse the bin across every account, restore anything you did not mean to clear, or empty it for good when you want the storage back now rather than in thirty days.',
+  },
 ]
 
 export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
@@ -100,10 +105,10 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
               fetched from Gmail when you open them, and never saved.
             </li>
             <li>
-              <strong>It cannot delete permanently.</strong> Hive only asks for
-              the permissions it needs, and that deliberately excludes full
-              mailbox access. Everything it removes goes to Trash, recoverable
-              for thirty days.
+              <strong>Deleting is deliberate.</strong> Bulk cleanup always goes
+              to Trash, recoverable for thirty days. Permanent deletion exists,
+              but only from the Trash view, one confirmation at a time — never
+              on a schedule and never by accident.
             </li>
             <li>
               <strong>It has no ads and no third parties.</strong> Your data is

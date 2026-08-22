@@ -23,19 +23,21 @@ Open source under MIT, and self-hostable if you would rather run your own.
 - **Compose and send** from any connected account, with a daily-quota
   indicator so a bulk send does not fail silently against Google's limits.
 
-## What it deliberately does not do
+## About deleting
 
-**Permanent delete.** Doing that requires Gmail's restricted full-mailbox
-scope, which would mean a heavier security review and asking every user for
-far broader access than the product needs. Trash reaches the same end state
-via a much smaller permission. If you self-host and genuinely want instant
-permanent delete, you can add that scope to your own instance — see
-[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
+**Bulk cleanup always trashes.** Anything Hive clears in bulk goes to Gmail’s
+Trash, recoverable for thirty days. That is the only thing a search, a
+multi-select or a scheduled rule can ever do.
 
-**Store your email.** Hive keeps an index — subject, sender, date, labels,
-snippet, message ID — so search is fast. Message bodies and attachments are
-fetched from Gmail on demand and never persisted. OAuth tokens are encrypted
-at rest.
+**Permanent deletion exists, but is deliberately awkward.** It lives only in
+the Trash view, needs a typed confirmation showing the exact count, and can
+never run on a schedule. There is no undo, so the product treats it that way.
+
+## What it does not store
+
+Hive keeps an index — subject, sender, date, labels, snippet, message ID — so
+search is fast. Message bodies and attachments are fetched from Gmail on demand
+and **never persisted**. OAuth tokens are encrypted at rest and never logged.
 
 ## Stack
 

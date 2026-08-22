@@ -19,7 +19,9 @@ test.describe('landing page', () => {
       page.getByRole('heading', { name: 'What Hive does not do' }),
     ).toBeVisible()
     await expect(page.getByText(/does not store your email/i)).toBeVisible()
-    await expect(page.getByText(/cannot delete permanently/i)).toBeVisible()
+    // Deleting is described honestly now that permanent deletion exists.
+    await expect(page.getByText(/Deleting is deliberate/i)).toBeVisible()
+    await expect(page.getByText(/recoverable for thirty days/i)).toBeVisible()
   })
 
   test('Get started opens the sign-in form, and Back returns', async ({ page }) => {

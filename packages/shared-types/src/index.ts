@@ -6,20 +6,36 @@
  */
 
 /**
- * The three scopes the hosted product requests, and the only three it may.
+ * The scopes the product requests. Single source of truth for the OAuth
+ * request — do not build scope strings anywhere else.
  *
- * Adding `https://mail.google.com/` pulls the app into a CASA security
- * assessment — see docs/decisions/0001-trash-not-permanent-delete.md. This
- * array is the single source of truth for the OAuth request; do not build
- * scope strings anywhere else.
+ * `https://mail.google.com/` is a **restricted** scope. It is what makes
+ * permanent delete possible, and it is why this app needs a CASA assessment
+ * during Google verification. See docs/decisions/0002-permanent-delete.md
+ * before changing this list.
  */
 export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.send',
+  'https://mail.google.com/',
 ] as const
 
 export type GmailScope = (typeof GMAIL_SCOPES)[number]
+
+/** The one scope permanent delete requires. */
+export const FULL_MAILBOX_SCOPE = 'https://mail.google.com/'
+
+/**
+ * Whether a connection was actually granted permanent-delete rights.
+ *
+ * Checked at runtime rather than assumed: a user can un-tick the scope on the
+ * consent screen, and if verification forces the scope to be dropped later the
+ * Trash view must degrade to view-and-restore rather than throwing.
+ */
+export function canPermanentlyDelete(grantedScope: string): boolean {
+  return grantedScope.split(/\s+/).includes(FULL_MAILBOX_SCOPE)
+}
 
 /**
  * `reauth_required` means Google rejected the stored refresh token — usually
@@ -68,6 +84,8 @@ export type AuditAction =
   | 'connect'
   | 'disconnect'
   | 'trash'
+  | 'restore'
+  | 'delete_forever'
   | 'send'
   | 'rule_run'
 

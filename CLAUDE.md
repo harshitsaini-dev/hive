@@ -20,15 +20,23 @@ docs/01-project-state.md first, every session.
   global `user.name`/`user.email`, and never run `gh auth login` without
   `GH_CONFIG_DIR` pointed at `.gh-config/`. See docs/05-local-git-github.md.
 
-### Scope discipline (this is the load-bearing rule for this project)
-- The hosted product requests ONLY gmail.readonly, gmail.modify, gmail.send.
-  NEVER add https://mail.google.com/ (full mailbox scope) to the hosted app's
-  OAuth request without an explicit ADR explaining why and confirming CASA
-  implications — this scope change affects Google verification status.
-- "Delete" in the hosted product means trash (batchModify), never
-  batchDelete. If a self-hosting user wants true permanent delete on their
-  own instance, that's documented in docs/SELF-HOSTING.md as something they
-  opt into themselves, not a hosted-product default.
+### Destructive-action discipline (load-bearing for this project)
+The app holds the restricted https://mail.google.com/ scope, so it CAN destroy
+mail irrecoverably. See docs/decisions/0002-permanent-delete.md.
+
+- batchDelete is reachable from exactly ONE place: an explicit, type-to-confirm
+  user action in the Trash view. Never widen that surface.
+- Bulk cleanup and cleanup rules ALWAYS trash (batchModify), never delete. A
+  scheduled irreversible action against a query written weeks ago is the most
+  dangerous thing this codebase could do — do not add one, whatever the ask.
+- Every delete_forever writes its audit_log row BEFORE the Gmail call, so a
+  partial failure still leaves a record of what was attempted.
+- Permanent-delete controls check the granted scope at runtime. If the scope is
+  ever dropped, the Trash view degrades to view-and-restore rather than
+  throwing.
+- The app stays in Google Testing mode (free, 100 users). Going public with
+  this scope triggers a CASA assessment that may cost real money — flag it
+  before any verification work, never assume it is free.
 
 ### Documentation discipline
 - Update docs/01-project-state.md every session; append a dated entry to

@@ -10,6 +10,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from './Icons.js'
+import { MailboxPage } from './MailboxPage.js'
 import { StatusScreen } from './StatusScreen.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
@@ -223,6 +224,10 @@ export function AccountsPage({
       <div role="alert" aria-live="assertive">
         {error && <p className="bad">{error}</p>}
       </div>
+
+      {load.state === 'ready' && load.accounts.length > 0 && (
+        <MailboxPage accounts={load.accounts} />
+      )}
     </main>
   )
 }

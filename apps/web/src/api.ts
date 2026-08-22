@@ -44,6 +44,26 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T
 }
 
+export interface MessageRow {
+  gmailMessageId: string
+  threadId: string
+  accountId: string
+  gmailAddress: string
+  from: string
+  subject: string
+  snippet: string
+  labels: string[]
+  receivedAt: string
+}
+
+export interface SearchResult {
+  messages: MessageRow[]
+  /** Per-account outcome, so one failing mailbox can be named rather than
+   *  failing the whole search. */
+  accounts: { accountId: string; gmailAddress: string; error: string | null }[]
+  skipped: { accountId: string; gmailAddress: string; reason: string }[]
+}
+
 export const api = {
   requestCode: (email: string) =>
     request<{ sent: true; expiresInMinutes: number }>('/auth/otp/request', {
@@ -68,4 +88,37 @@ export const api = {
 
   disconnect: (id: string) =>
     request<void>(`/accounts/${id}`, { method: 'DELETE' }),
+
+  searchMessages: (options: { q?: string; accountId?: string }) => {
+    const params = new URLSearchParams()
+    if (options.q) params.set('q', options.q)
+    if (options.accountId) params.set('accountId', options.accountId)
+    return request<SearchResult>(`/messages?${params.toString()}`)
+  },
+
+  trashMessages: (accountId: string, messageIds: string[]) =>
+    request<{ trashed: number }>('/messages/trash', {
+      method: 'POST',
+      body: JSON.stringify({ accountId, messageIds }),
+    }),
+
+  restoreMessages: (accountId: string, messageIds: string[]) =>
+    request<{ restored: number }>('/messages/restore', {
+      method: 'POST',
+      body: JSON.stringify({ accountId, messageIds }),
+    }),
+
+  /**
+   * Irreversible. The confirmation phrase is required by the server too, so no
+   * client can reach this endpoint by reshaping a trash request.
+   */
+  deleteForever: (accountId: string, messageIds: string[]) =>
+    request<{ deleted: number }>('/messages/delete-forever', {
+      method: 'POST',
+      body: JSON.stringify({
+        accountId,
+        messageIds,
+        confirm: 'permanently delete',
+      }),
+    }),
 }

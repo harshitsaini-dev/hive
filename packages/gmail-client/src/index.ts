@@ -3,8 +3,9 @@
  *
  * Every Gmail call in the project goes through here. That is not just tidiness:
  * it is what makes the scope rule enforceable. If code elsewhere could build
- * its own requests, "we only ever trash" would be a convention rather than a
- * property of the codebase.
+ * its own requests, the rules about which operations are reachable would be
+ * conventions rather than properties of the codebase. In particular,
+ * permanent deletion lives in exactly one function (see ADR 0002).
  */
 import { GMAIL_SCOPES } from '@hive/shared-types'
 
@@ -209,6 +210,4 @@ export function isHistoryUsable(lastSyncedAt: Date | null, now = new Date()): bo
   return elapsedDays < HISTORY_HORIZON_DAYS
 }
 
-// Implemented in Phase 1 onward: token exchange and refresh, listMessages,
-// getMessage, trashMessages (batchModify — never batchDelete, see ADR 0001),
-// sendMessage, and history-based incremental sync.
+export * from './messages.js'

@@ -31,16 +31,25 @@ This is what lets Hive talk to Gmail at all. Budget ~20 minutes.
 - [ ] Developer contact email: same
 - [ ] Save and continue
 
-### 1d. Scopes — the load-bearing step
-Add **exactly** these three, no more:
+### 1d. Scopes
+Add all four:
 - [ ] `https://www.googleapis.com/auth/gmail.readonly`
 - [ ] `https://www.googleapis.com/auth/gmail.modify`
 - [ ] `https://www.googleapis.com/auth/gmail.send`
+- [ ] `https://mail.google.com/` — **restricted**, required for permanent delete
 
-> **Do not add `https://mail.google.com/`.** That is the restricted
-> full-mailbox scope, and requesting it drags the app into a CASA security
-> assessment on top of normal verification. It is the single most expensive
-> mistake available on this screen. See `docs/02-architecture.md`.
+> **The fourth one has consequences.** `https://mail.google.com/` is a
+> restricted scope. In Testing mode (where this app lives) it is free and
+> unremarkable. At public launch it triggers a CASA security assessment, which
+> is sometimes a free self-assessment and sometimes a paid third-party audit.
+> Read `docs/decisions/0002-permanent-delete.md` before submitting for
+> verification — dropping this scope is the expected answer if CASA is not
+> free, and the app degrades gracefully without it.
+
+**Already created the client with only three scopes?** Add the fourth in the
+console, then reconnect the account in Hive — Google only grants what was
+consented to, so existing connections keep the old, narrower grant until they
+go through consent again.
 
 ### 1e. Test users
 While the app is unverified it runs in Testing mode, capped at 100 users.

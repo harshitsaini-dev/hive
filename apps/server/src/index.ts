@@ -8,6 +8,7 @@ import { config } from './config.js'
 import { errorHandler, asyncRoute, notFound } from './errors.js'
 import { authRouter } from './routes/auth.js'
 import { accountsRouter, oauthCallback } from './routes/accounts.js'
+import { messagesRouter } from './routes/messages.js'
 
 const app = express()
 
@@ -47,6 +48,7 @@ app.get(
 
 app.use('/auth', authRouter)
 app.use('/accounts', accountsRouter)
+app.use('/messages', messagesRouter)
 
 /**
  * Mounted at whatever path GOOGLE_REDIRECT_URI names, so the route and the URI
@@ -56,7 +58,7 @@ app.use('/accounts', accountsRouter)
  */
 app.get(new URL(config.GOOGLE_REDIRECT_URI).pathname, ...oauthCallback)
 
-// Still to come: /messages (Phase 2), /rules (Phase 5).
+// Still to come: /rules (Phase 5).
 
 app.use((_req, _res, next) => next(notFound('No such endpoint')))
 app.use(errorHandler)

@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { db } from '../index.js'
 
-export type AuditAction = 'connect' | 'disconnect' | 'trash' | 'send' | 'rule_run'
+export type AuditAction =
+  | 'connect'
+  | 'disconnect'
+  | 'trash'
+  | 'restore'
+  /** Irreversible. See ADR 0002 — this row is the only record that survives. */
+  | 'delete_forever'
+  | 'send'
+  | 'rule_run'
 
 export interface AuditRow {
   id: string
