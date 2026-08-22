@@ -6,19 +6,31 @@ import { expect, test } from '@playwright/test'
  * afternoon before any feature exists to test.
  */
 test.describe('application boots', () => {
-  test('the shell renders and reaches the API', async ({ page }) => {
+  test('the shell renders with no unexpected console errors', async ({ page }) => {
     const consoleErrors: string[] = []
+
+    /**
+     * The app asks /auth/me on mount to decide which page to show, and for an
+     * anonymous visitor the correct answer is 401. Browsers log every failed
+     * response to the console and that cannot be suppressed from script, so
+     * this one is expected rather than a defect. Anything else is not.
+     */
+    const isExpected = (text: string) =>
+      /Failed to load resource.*401/.test(text)
+
     page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text())
+      if (message.type() === 'error' && !isExpected(message.text())) {
+        consoleErrors.push(message.text())
+      }
     })
     page.on('pageerror', (error) => consoleErrors.push(error.message))
 
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { name: 'Hive' })).toBeVisible()
-
-    // The status region resolves out of "checking" once the proxy answers.
-    await expect(page.getByText(/API reachable/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Hive', level: 1 })).toBeVisible()
+    // An anonymous visitor gets the login form, not a loading state stuck
+    // forever — which is what a genuinely failing /auth/me would look like.
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
 
     expect(consoleErrors).toEqual([])
   })

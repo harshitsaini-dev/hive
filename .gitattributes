@@ -6,3 +6,8 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+
+# Windows batch files must keep CRLF or cmd.exe mis-parses them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

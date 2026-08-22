@@ -1,55 +1,56 @@
 import { useEffect, useState } from 'react'
+import { api, type User } from './api.js'
+import { LoginPage } from './LoginPage.js'
+import { AccountsPage } from './AccountsPage.js'
 
-type Health =
+type Auth =
   | { state: 'checking' }
-  | { state: 'up'; env: string }
-  | { state: 'down'; reason: string }
+  | { state: 'anonymous' }
+  | { state: 'signed-in'; user: User }
 
-/**
- * Placeholder shell. Its one real job right now is to prove the dev proxy
- * reaches the API — which is the thing most likely to be quietly misconfigured
- * before any feature work starts.
- */
 export function App() {
-  const [health, setHealth] = useState<Health>({ state: 'checking' })
+  const [auth, setAuth] = useState<Auth>({ state: 'checking' })
 
+  // One call on mount decides which page to show. Rendering the login form
+  // first and swapping it out would flash the wrong screen at every signed-in
+  // user on every refresh.
   useEffect(() => {
-    const abort = new AbortController()
+    let cancelled = false
 
-    fetch('/api/health', { signal: abort.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        return response.json() as Promise<{ status: string; env: string }>
+    api
+      .me()
+      .then(({ user }) => {
+        if (!cancelled) setAuth({ state: 'signed-in', user })
       })
-      .then((body) => setHealth({ state: 'up', env: body.env }))
-      .catch((error: unknown) => {
-        if (abort.signal.aborted) return
-        setHealth({
-          state: 'down',
-          reason: error instanceof Error ? error.message : 'unreachable',
-        })
+      .catch(() => {
+        if (!cancelled) setAuth({ state: 'anonymous' })
       })
 
-    return () => abort.abort()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  return (
-    <main className="shell">
-      <h1>Hive</h1>
-      <p className="tagline">Manage several Gmail accounts from one place.</p>
+  if (auth.state === 'checking') {
+    return (
+      <main className="shell">
+        <p className="hint" role="status">
+          Loading…
+        </p>
+      </main>
+    )
+  }
 
-      <section className="status" aria-live="polite">
-        {health.state === 'checking' && <p>Checking the API…</p>}
-        {health.state === 'up' && (
-          <p className="ok">API reachable — running in {health.env}.</p>
-        )}
-        {health.state === 'down' && (
-          <p className="bad">
-            API unreachable ({health.reason}). Is the server running on port
-            3000?
-          </p>
-        )}
-      </section>
-    </main>
+  if (auth.state === 'anonymous') {
+    return (
+      <LoginPage onSignedIn={(user) => setAuth({ state: 'signed-in', user })} />
+    )
+  }
+
+  return (
+    <AccountsPage
+      user={auth.user}
+      onSignedOut={() => setAuth({ state: 'anonymous' })}
+    />
   )
 }

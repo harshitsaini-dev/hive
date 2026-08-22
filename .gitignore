@@ -32,3 +32,6 @@ Thumbs.db
 local.db
 local.db-*
 *.tsbuildinfo
+
+# Background dev-server logs and PIDs (start.bat)
+.logs/

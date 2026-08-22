@@ -6,6 +6,8 @@ import { WebSocketServer } from 'ws'
 import { db } from '@hive/db'
 import { config } from './config.js'
 import { errorHandler, asyncRoute, notFound } from './errors.js'
+import { authRouter } from './routes/auth.js'
+import { accountsRouter, oauthCallback } from './routes/accounts.js'
 
 const app = express()
 
@@ -43,7 +45,18 @@ app.get(
   }),
 )
 
-// Routes land here as phases progress: /auth, /accounts, /messages, /rules.
+app.use('/auth', authRouter)
+app.use('/accounts', accountsRouter)
+
+/**
+ * Mounted at whatever path GOOGLE_REDIRECT_URI names, so the route and the URI
+ * registered in the Google Cloud console are guaranteed to agree. Getting
+ * these out of step produces a redirect_uri_mismatch that looks like a Google
+ * problem rather than a routing one.
+ */
+app.get(new URL(config.GOOGLE_REDIRECT_URI).pathname, ...oauthCallback)
+
+// Still to come: /messages (Phase 2), /rules (Phase 5).
 
 app.use((_req, _res, next) => next(notFound('No such endpoint')))
 app.use(errorHandler)

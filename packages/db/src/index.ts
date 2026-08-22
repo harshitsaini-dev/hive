@@ -32,6 +32,12 @@ export function createDbClient(): Client {
   return createClient(isRemote ? { url, authToken } : { url })
 }
 
+export * from './repositories/users.js'
+export * from './repositories/sessions.js'
+export * from './repositories/otps.js'
+export * from './repositories/accounts.js'
+export * from './repositories/audit.js'
+
 let shared: Client | undefined
 
 /** Process-wide client. Cheap to reuse; do not create one per request. */
