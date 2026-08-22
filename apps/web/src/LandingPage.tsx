@@ -1,5 +1,4 @@
 import {
-  GithubIcon,
   HiveMark,
   ScheduleIcon,
   SearchIcon,
@@ -43,15 +42,6 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
 
         <div className="landing__bar-actions">
           <ThemeToggle />
-          <a
-            className="link-plain"
-            href="https://github.com/harshitsaini-dev/hive"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            <GithubIcon size={16} />
-            GitHub
-          </a>
           <button type="button" onClick={onGetStarted}>
             Sign in
           </button>
@@ -60,7 +50,6 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
 
       <main className="shell">
         <section className="hero">
-          <p className="hero__eyebrow">Open source · MIT</p>
           <h1>Manage several Gmail accounts from one place.</h1>
           <p className="hero__sub">
             Search across all of them at once, clear out the clutter in bulk,
@@ -72,14 +61,6 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
             <button type="button" onClick={onGetStarted}>
               Get started
             </button>
-            <a
-              className="link-plain"
-              href="https://github.com/harshitsaini-dev/hive"
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              Read the source
-            </a>
           </div>
 
           <p className="hint">
@@ -123,24 +104,12 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
             </li>
             <li>
               <strong>It has no ads and no third parties.</strong> Your data is
-              not shared or sold. The whole thing is open source, so you can
-              check rather than take our word for it.
+              never shared or sold, and nothing about your mail leaves Hive and
+              Google.
             </li>
           </ul>
         </section>
       </main>
-
-      <footer className="landing__foot">
-        <span className="hint">MIT licensed. Self-host it if you prefer.</span>
-        <a
-          className="link-plain"
-          href="https://github.com/harshitsaini-dev/hive"
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          github.com/harshitsaini-dev/hive
-        </a>
-      </footer>
     </div>
   )
 }

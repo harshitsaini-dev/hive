@@ -2,10 +2,45 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- viewport-fit=cover lets the page paint into the notch area; the CSS
+         then uses safe-area insets so nothing important lands under it. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+
     <title>Hive</title>
-    <meta name="description" content="Manage several Gmail accounts from one place." />
+    <meta
+      name="description"
+      content="Manage several Gmail accounts from one place."
+    />
+
+    <!-- Tints the browser and OS chrome. Two entries so the bar matches
+         whichever theme is showing. -->
+    <meta
+      name="theme-color"
+      content="#faf7f0"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#171512"
+      media="(prefers-color-scheme: dark)"
+    />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- iOS ignores the manifest's display mode and needs its own opt-in. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hive" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+
+    <meta name="color-scheme" content="light dark" />
   </head>
   <body>
     <div id="root"></div>

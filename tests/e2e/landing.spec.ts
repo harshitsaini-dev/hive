@@ -34,11 +34,10 @@ test.describe('landing page', () => {
     ).toBeVisible()
   })
 
-  test('external links are safe and open in a new tab', async ({ page }) => {
-    const github = page.getByRole('link', { name: 'GitHub', exact: true })
-    await expect(github).toHaveAttribute('target', '_blank')
-    // noopener stops the opened page reaching back through window.opener.
-    await expect(github).toHaveAttribute('rel', /noopener/)
+  test('links off to other sites are not offered', async ({ page }) => {
+    // The landing page deliberately keeps the visitor in one place — no
+    // GitHub or source links competing with the single call to action.
+    await expect(page.getByRole('link')).toHaveCount(0)
   })
 
   test('holds its layout from mobile to desktop', async ({ page }) => {

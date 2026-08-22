@@ -10,12 +10,14 @@ import {
   PlusIcon,
   TrashIcon,
 } from './Icons.js'
+import { StatusScreen } from './StatusScreen.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
 type Load =
   | { state: 'loading' }
   | { state: 'ready'; accounts: ConnectedAccount[] }
   | { state: 'error'; message: string }
+  | { state: 'denied' }
 
 /** Reads the outcome the OAuth callback appended to the URL, then clears it. */
 function useConnectOutcome(): string | null {
@@ -45,9 +47,11 @@ function useConnectOutcome(): string | null {
 export function AccountsPage({
   user,
   onSignedOut,
+  onSessionLost,
 }: {
   user: User
   onSignedOut: () => void
+  onSessionLost: () => void
 }) {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
   const [connecting, setConnecting] = useState(false)
@@ -59,6 +63,15 @@ export function AccountsPage({
       const { accounts } = await api.listAccounts()
       setLoad({ state: 'ready', accounts })
     } catch (caught) {
+      // The session ended underneath us — expired, or revoked elsewhere.
+      if (
+        caught instanceof ApiRequestError &&
+        (caught.status === 401 || caught.status === 403)
+      ) {
+        setLoad({ state: 'denied' })
+        return
+      }
+
       setLoad({
         state: 'error',
         message:
@@ -110,6 +123,15 @@ export function AccountsPage({
           : 'Could not disconnect that account.',
       )
     }
+  }
+
+  if (load.state === 'denied') {
+    return (
+      <StatusScreen
+        kind="access-denied"
+        actions={[{ label: 'Sign in again', primary: true, onClick: onSessionLost }]}
+      />
+    )
   }
 
   return (

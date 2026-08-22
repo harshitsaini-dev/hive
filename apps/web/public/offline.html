@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hive — offline</title>
+    <style>
+      :root {
+        --bg: #faf7f0;
+        --surface: #fffdf8;
+        --border: #e8e0d0;
+        --ink: #2b2620;
+        --muted: #6f675c;
+        --accent: #b8801d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #171512;
+          --surface: #211e1a;
+          --border: #35302a;
+          --ink: #f3eee4;
+          --muted: #a89f92;
+          --accent: #e0a53a;
+        }
+      }
+      body {
+        display: grid;
+        place-items: center;
+        min-height: 100dvh;
+        margin: 0;
+        padding: 1.5rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      .box {
+        max-width: 24rem;
+        padding: 2rem;
+        border: 1px solid var(--border);
+        border-radius: 0.9rem;
+        background: var(--surface);
+        text-align: center;
+      }
+      h1 {
+        margin: 0.75rem 0 0.5rem;
+        font-size: 1.35rem;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      svg {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <svg
+        width="40"
+        height="40"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 2.5 20.5 7.4v9.2L12 21.5 3.5 16.6V7.4z" />
+        <path d="M12 8.2 16.2 10.6v4.8L12 17.8 7.8 15.4v-4.8z" opacity="0.45" />
+      </svg>
+
+      <h1>You're offline</h1>
+      <!-- Honest about the limitation: Hive reads live from Gmail, so there is
+           genuinely nothing useful to show without a connection. -->
+      <p>
+        Hive reads your mail from Gmail as you go, so it needs a connection to
+        show anything. Reconnect and it will pick up where you left off.
+      </p>
+    </div>
+  </body>
+</html>

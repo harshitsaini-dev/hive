@@ -197,15 +197,6 @@ h2 {
   padding: 2rem 0 3rem;
 }
 
-.hero__eyebrow {
-  margin: 0 0 0.75rem;
-  color: var(--accent);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .hero h1 {
   max-width: 18ch;
   font-size: clamp(2rem, 7vw, 3.25rem);
@@ -259,17 +250,6 @@ h2 {
 
 .promise strong {
   color: var(--ink);
-}
-
-.landing__foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: space-between;
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: 1.5rem 1.25rem 2.5rem;
-  border-top: 1px solid var(--border);
 }
 
 /* ---- app ----------------------------------------------------------------- */
@@ -505,4 +485,179 @@ h2 svg,
 /* The features grid puts the icon above the heading, not beside it. */
 .feature h2 {
   display: block;
+}
+
+/* ---- mobile & installed-app -------------------------------------------- */
+
+/*
+ * dvh rather than vh: on mobile browsers vh is the tallest the viewport ever
+ * gets, so a 100vh layout sits partly under the address bar until you scroll.
+ */
+body {
+  min-height: 100dvh;
+  /* Stops iOS inflating text in landscape. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/*
+ * viewport-fit=cover lets the page paint into the notch and home-indicator
+ * area, which looks right but would otherwise put controls underneath them.
+ */
+.landing__bar,
+.shell {
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
+}
+
+.landing__bar {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.shell {
+  padding-bottom: max(4rem, env(safe-area-inset-bottom));
+}
+
+/*
+ * Comfortable touch targets. 44px is the size below which taps start missing,
+ * and it costs nothing on a pointer device.
+ */
+@media (pointer: coarse) {
+  button,
+  input,
+  .theme-toggle__option {
+    min-height: 44px;
+  }
+
+  button.link {
+    /* Text links need the height without gaining a button's box. */
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/*
+ * 16px is the threshold below which iOS Safari zooms the page on focus. The
+ * base rule already inherits 16px; this guards against a future override.
+ */
+input,
+select,
+textarea {
+  font-size: max(16px, 1rem);
+}
+
+@media (max-width: 30rem) {
+  .shell {
+    padding-top: 1.5rem;
+  }
+
+  .hero {
+    padding: 1rem 0 2rem;
+  }
+
+  /* Stacked rather than squeezed side by side. */
+  .accounts li,
+  .card__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .card__head button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- status screens (404, offline, 500, 403) ---------------------------- */
+
+.status-screen__main {
+  display: grid;
+  place-items: center;
+  /* Fill what is left below the bar, so the card sits optically centred. */
+  min-height: calc(100dvh - 8rem);
+}
+
+.status-screen__card {
+  padding: 2.25rem 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  text-align: center;
+}
+
+.status-screen__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  margin-bottom: 1rem;
+  border-radius: 0.85rem;
+  background: var(--surface-2);
+}
+
+.status-screen__icon--neutral {
+  color: var(--muted);
+}
+
+.status-screen__icon--warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.status-screen__icon--bad {
+  color: var(--bad);
+}
+
+.status-screen__code {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.status-screen__card h1 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(1.3rem, 4.5vw, 1.6rem);
+}
+
+.status-screen__card .hint {
+  max-width: 34ch;
+  margin-inline: auto;
+}
+
+/*
+ * Server-supplied text. Monospaced and quiet: useful when reporting a problem,
+ * but visibly not the part the reader is meant to act on.
+ */
+.status-screen__detail {
+  margin: 1rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.status-screen__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1.5rem;
 }

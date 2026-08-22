@@ -184,3 +184,35 @@ export function CheckIcon(props: IconProps) {
     </Icon>
   )
 }
+
+export function LockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+      <path d="M12 14.5v2.5" />
+    </Icon>
+  )
+}
+
+/** Offline — a disconnected plug. */
+export function PlugIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 2.5v5M15 2.5v5" />
+      <path d="M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0z" />
+      <path d="M12 16v5.5" />
+      <path d="m3 3 18 18" />
+    </Icon>
+  )
+}
+
+export function ServerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="7" rx="1.5" />
+      <rect x="3" y="13" width="18" height="7" rx="1.5" />
+      <path d="M7 7.5v.1M7 16.5v.1" />
+    </Icon>
+  )
+}
