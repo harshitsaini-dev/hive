@@ -28,9 +28,26 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The API imports workspace packages that export TypeScript source, so a
-      # plain `node dist/index.js` cannot run it. This caught that once; keep
-      # it so a deploy never discovers it on Render instead.
+  # Mirrors how Render actually installs and starts the API.
+  #
+  # Its own job because it installs *without* devDependencies — the same thing
+  # Render does, since it sets NODE_ENV=production. Running this alongside a
+  # full install would hide exactly the failures it exists to catch: a runtime
+  # import that is really a devDependency, or a start command that needs a
+  # build step which never ran.
+  prod-boot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install production dependencies only
+        run: npm ci --omit=dev
+
       - name: Server starts in production mode
         run: node scripts/check-prod-boot.mjs
         env:

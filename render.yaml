@@ -13,9 +13,16 @@ services:
     plan: free
     region: singapore # Closest region to the users this is built for.
 
-    # The repo is an npm workspace monorepo, so install from the root and let
-    # the workspace resolve. `npm ci` needs the root lockfile.
-    buildCommand: npm ci && npm run build --workspace @hive/server
+    # Install only. No typecheck here: Render sets NODE_ENV=production, so
+    # `npm ci` omits devDependencies — including @types/* — and tsc would fail
+    # on types it cannot see. Typechecking belongs in CI, which runs it with
+    # the full dependency tree on every push, and CI also boots the server with
+    # a production-only install so a missing runtime dependency is caught there
+    # rather than here.
+    #
+    # The runtime needs no build step: tsx strips types at load, so the
+    # TypeScript sources the workspace packages export run directly.
+    buildCommand: npm ci
     startCommand: npm run start --workspace @hive/server
 
     # Liveness only — deliberately does not touch the database, so a brief
