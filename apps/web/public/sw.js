@@ -53,6 +53,24 @@ self.addEventListener('fetch', (event) => {
    */
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/ws')) return
 
+  /**
+   * Vite's dev server URLs are never cached.
+   *
+   * The worker is registered in development so the install prompt can be tried
+   * without a separate production build, but dev modules are unhashed — a
+   * cache-first hit on /src/App.tsx would serve yesterday's code and look like
+   * the edit simply did not apply.
+   */
+  if (
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.searchParams.has('t') ||
+    url.searchParams.has('import')
+  ) {
+    return
+  }
+
   // Navigations: network first, so a deploy is picked up immediately. The
   // cache is the fallback that makes the installed app work offline.
   if (request.mode === 'navigate') {

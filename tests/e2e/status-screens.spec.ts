@@ -177,3 +177,44 @@ test.describe('installability', () => {
     expect(viewport).toContain('viewport-fit=cover')
   })
 })
+
+test.describe('link previews', () => {
+  test('declares Open Graph and Twitter card metadata', async ({ page }) => {
+    await page.goto('/')
+
+    const content = async (selector: string) =>
+      page.locator(selector).getAttribute('content')
+
+    expect(await content('meta[property="og:title"]')).toContain('Hive')
+    expect(await content('meta[property="og:type"]')).toBe('website')
+    expect(await content('meta[property="og:description"]')).toBeTruthy()
+
+    // Crawlers fetch these server-side, so a relative path resolves to
+    // nothing and the card renders without an image.
+    for (const selector of [
+      'meta[property="og:image"]',
+      'meta[property="og:url"]',
+      'meta[name="twitter:image"]',
+    ]) {
+      expect(await content(selector), `${selector} must be absolute`).toMatch(
+        /^https?:\/\//,
+      )
+    }
+
+    expect(await content('meta[name="twitter:card"]')).toBe('summary_large_image')
+    expect(await content('meta[property="og:image:alt"]')).toBeTruthy()
+  })
+
+  test('the preview image is served at the declared size', async ({ request }) => {
+    const response = await request.get('http://localhost:5173/og-image.png')
+    expect(response.ok()).toBe(true)
+    expect(response.headers()['content-type']).toContain('image/png')
+
+    // 1200x630 is what the declared og:image:width/height promise. A mismatch
+    // makes some consumers fall back to a small square thumbnail.
+    const bytes = await response.body()
+    // PNG IHDR: width and height are big-endian uint32 at offsets 16 and 20.
+    expect(bytes.readUInt32BE(16)).toBe(1200)
+    expect(bytes.readUInt32BE(20)).toBe(630)
+  })
+})

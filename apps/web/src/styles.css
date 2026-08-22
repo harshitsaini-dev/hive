@@ -661,3 +661,29 @@ textarea {
   justify-content: center;
   margin-top: 1.5rem;
 }
+
+/* ---- install prompt ------------------------------------------------------ */
+
+/*
+ * Shown in place of the install button once the app is running standalone —
+ * confirms the state rather than leaving a gap where the button was.
+ */
+.install-badge {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  color: var(--ok);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Secondary to "Get started": outlined rather than solid. */
+.btn-outline {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--surface-2);
+}

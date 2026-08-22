@@ -6,6 +6,7 @@ import {
   ShieldIcon,
   TrashIcon,
 } from './Icons.js'
+import { InstallButton } from './InstallButton.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
 const FEATURES = [
@@ -42,6 +43,7 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
 
         <div className="landing__bar-actions">
           <ThemeToggle />
+          <InstallButton className="btn-outline" />
           <button type="button" onClick={onGetStarted}>
             Sign in
           </button>
@@ -61,6 +63,7 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
             <button type="button" onClick={onGetStarted}>
               Get started
             </button>
+            <InstallButton className="btn-outline" />
           </div>
 
           <p className="hint">
