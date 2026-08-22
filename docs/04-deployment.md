@@ -141,6 +141,19 @@ permanently — it just drifts. Accept it, or move to a paid instance.
 
 ---
 
+## Verifying a deploy
+
+
+
+Drives the deployed site in a real browser: landing page renders with no
+console errors, theme switching works, the 404 screen appears on an unknown
+path, and the privacy page is reachable. Point it elsewhere with
+ — useful for checking a preview deployment before
+promoting it.
+
+That files are served correctly is not the same as the bundle running. Only a
+browser distinguishes the two.
+
 ## Restoring the repo homepage
 
 The GitHub homepage link was removed while the site was not live. Once it is:

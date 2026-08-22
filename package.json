@@ -24,7 +24,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:headless": "cross-env CI=1 playwright test",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "test:live": "playwright test --config=playwright.live.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",

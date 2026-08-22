@@ -12,6 +12,7 @@ const slowMo = isCI ? 0 : Number(process.env.SLOWMO ?? 400)
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // tests/live/ targets the deployed site and has its own config.
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   // Serial locally so a headed run is actually watchable; parallel in CI.
