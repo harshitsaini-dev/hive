@@ -2,19 +2,19 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build --workspace @hive/web",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "npm ci",
+  "installCommand": "npm ci --include=dev",
   "framework": "vite",
 
   "rewrites": [
     {
-      "comment": "The API is proxied through this origin rather than called cross-site. Sessions are HttpOnly SameSite=Lax cookies, which a browser will not attach to a cross-origin fetch — proxying keeps them same-origin, exactly as the Vite dev proxy does locally. Change the destination to the real Render URL.",
+      "comment": "The API is proxied through this origin rather than called cross-site. Sessions are HttpOnly SameSite=Lax cookies, which a browser will not attach to a cross-origin fetch — proxying keeps them same-origin, exactly as the Vite dev proxy does locally.",
       "source": "/api/:path*",
-      "destination": "https://hive-api.onrender.com/:path*"
+      "destination": "https://hive-api-s1u3.onrender.com/:path*"
     },
     {
       "comment": "Google redirects the browser here after consent. It must reach the API, not the SPA — the handler exchanges the code and then redirects back into the app.",
       "source": "/auth/google/callback",
-      "destination": "https://hive-api.onrender.com/auth/google/callback"
+      "destination": "https://hive-api-s1u3.onrender.com/auth/google/callback"
     },
     {
       "comment": "Everything else is client-routed: /privacy, /terms and the app itself. Without this a refresh on any path but / returns a 404 from the CDN.",
