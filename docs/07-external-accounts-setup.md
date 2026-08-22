@@ -80,12 +80,35 @@ TURSO_AUTH_TOKEN=...
 ## 3. Resend (OTP email)
 - [ ] Sign up at https://resend.com — free tier, 3,000 emails/month
 - [ ] Create an API key
-- [ ] For now use the shared `onboarding@resend.dev` sender; switching to
-      `hive.harshitsaini.in` needs DNS records and can wait until Phase 7
 
 ```
 RESEND_API_KEY=re_...
 ```
+
+### Sender address
+
+Logins send from `Bee <no-reply@bee.harshitsaini.in>`. A custom domain will
+**not** send until it is verified in Resend:
+
+- [ ] Resend dashboard → **Domains** → Add domain → `bee.harshitsaini.in`
+- [ ] Resend gives you DKIM and SPF records — add them in Cloudflare DNS for
+      `harshitsaini.in`. If Cloudflare shows an orange cloud toggle on any of
+      them, turn proxying **off**; mail records must resolve directly.
+- [ ] Wait for Resend to show the domain as Verified (usually minutes, but DNS
+      can take up to a few hours)
+
+Optional but worth doing before public launch: add a DMARC record
+(`_dmarc.harshitsaini.in`, starting at `v=DMARC1; p=none;`). OTP mail that
+lands in spam looks like a broken login, not a deliverability problem, so it
+is worth getting right early.
+
+Until the domain verifies, fall back to `OTP_FROM_ADDRESS=onboarding@resend.dev`
+— it needs no DNS, but Resend only lets it deliver to the address that owns
+the account, which is fine for solo development.
+
+> Using a subdomain (`bee.`) rather than the root domain is the right call —
+> it keeps sending reputation for this app separate from any other mail on
+> `harshitsaini.in`.
 
 ## 4. Later — not needed to start coding
 Deferred until the phases that actually need them:
