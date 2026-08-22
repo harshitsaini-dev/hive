@@ -109,18 +109,20 @@ test.describe('signed in', () => {
     await page.getByLabel('Six-digit code').fill(code)
     await page.getByRole('button', { name: 'Sign in' }).click()
 
-    await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
+    await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()
     await expect(page.getByText(email)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Connect Gmail' })).toBeVisible()
+    // With no mailbox connected, every view points at the one action that
+    // fixes that rather than rendering an empty inbox.
+    await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()
 
-    // Nothing is connected yet, so the empty state must say so rather than
-    // showing an empty box.
+    await page.getByRole('button', { name: 'Go to Accounts' }).click()
+    await expect(page.getByRole('heading', { name: 'Accounts', level: 1 })).toBeVisible()
     await expect(page.getByText(/No accounts yet/)).toBeVisible()
 
     // The session survives a reload — this is what proves the cookie is set
     // properly rather than the state living only in React.
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
+    await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()
 
     await page.getByRole('button', { name: 'Sign out' }).click()
     await expect(

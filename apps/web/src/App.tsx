@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiRequestError, type User } from './api.js'
 import { LandingPage } from './LandingPage.js'
 import { LoginPage } from './LoginPage.js'
-import { AccountsPage } from './AccountsPage.js'
+import { AppShell } from './AppShell.js'
+import { PageSkeleton } from './Skeleton.js'
 import { StatusScreen } from './StatusScreen.js'
 import { useOnline } from './useOnline.js'
 
@@ -81,11 +82,14 @@ export function App() {
   }
 
   if (auth.state === 'checking') {
+    // A skeleton rather than a spinner: the layout is already known, so the
+    // page can hold its shape while the session resolves.
     return (
       <main className="shell">
-        <p className="hint" role="status">
-          Loading…
+        <p className="sr-only" role="status">
+          Loading
         </p>
+        <PageSkeleton />
       </main>
     )
   }
@@ -112,7 +116,7 @@ export function App() {
   }
 
   return (
-    <AccountsPage
+    <AppShell
       user={auth.user}
       onSignedOut={() => {
         setWantsSignIn(false)

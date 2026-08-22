@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
-import { api, ApiRequestError, type MessageRow } from './api.js'
-import { ConfirmDestructive } from './ConfirmDestructive.js'
-import { AlertIcon, SearchIcon, TrashIcon } from './Icons.js'
-
-type View = 'inbox' | 'trash'
+import { api, ApiRequestError, type MessageRow } from '../api.js'
+import { ConfirmDestructive } from '../ConfirmDestructive.js'
+import { AlertIcon, MailIcon, SearchIcon, TrashIcon } from '../Icons.js'
+import { MessageListSkeleton } from '../Skeleton.js'
 
 interface Load {
   loading: boolean
   messages: MessageRow[]
   error: string | null
-  /** Per-account failures — one broken account must not hide the others. */
+  /** Per-account failures — one broken mailbox must not hide the others. */
   problems: { gmailAddress: string; reason: string }[]
 }
-
-const EMPTY: Load = { loading: true, messages: [], error: null, problems: [] }
 
 function formatDate(iso: string): string {
   const date = new Date(iso)
@@ -32,29 +29,49 @@ function senderName(from: string): string {
   return match?.[1]?.trim() || from.replace(/[<>]/g, '')
 }
 
-export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
-  const [view, setView] = useState<View>('inbox')
-  const [accountId, setAccountId] = useState<string>('')
+export function MailView({
+  accounts,
+  loading: accountsLoading,
+  mode,
+}: {
+  accounts: ConnectedAccount[]
+  loading: boolean
+  mode: 'inbox' | 'trash'
+}) {
+  const [accountId, setAccountId] = useState('')
   const [search, setSearch] = useState('')
   const [applied, setApplied] = useState('')
-  const [load, setLoad] = useState<Load>(EMPTY)
+  const [load, setLoad] = useState<Load>({
+    loading: true,
+    messages: [],
+    error: null,
+    problems: [],
+  })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pending, setPending] = useState<'trash' | 'restore' | 'delete' | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // The Trash view is just a different Gmail query; there is no second index.
+  // Trash is just a different Gmail query; there is no second index.
   const query = useMemo(
-    () => [view === 'trash' ? 'in:trash' : '-in:trash', applied].filter(Boolean).join(' '),
-    [view, applied],
+    () =>
+      [mode === 'trash' ? 'in:trash' : '-in:trash', applied]
+        .filter(Boolean)
+        .join(' '),
+    [mode, applied],
   )
 
   const refresh = useCallback(async () => {
+    if (accountsLoading) return
+
     setLoad((previous) => ({ ...previous, loading: true, error: null }))
     setSelected(new Set())
 
     try {
-      const result = await api.searchMessages({ q: query, accountId: accountId || undefined })
+      const result = await api.searchMessages({
+        q: query,
+        accountId: accountId || undefined,
+      })
 
       setLoad({
         loading: false,
@@ -63,7 +80,10 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
         problems: [
           ...result.accounts
             .filter((entry) => entry.error)
-            .map((entry) => ({ gmailAddress: entry.gmailAddress, reason: entry.error! })),
+            .map((entry) => ({
+              gmailAddress: entry.gmailAddress,
+              reason: entry.error!,
+            })),
           ...result.skipped.map((entry) => ({
             gmailAddress: entry.gmailAddress,
             reason: 'needs reconnecting',
@@ -79,7 +99,7 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
           caught instanceof ApiRequestError ? caught.message : 'Could not search.',
       })
     }
-  }, [query, accountId])
+  }, [query, accountId, accountsLoading])
 
   useEffect(() => {
     void refresh()
@@ -103,10 +123,7 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
     return [...groups]
   }
 
-  async function run(
-    action: 'trash' | 'restore' | 'delete',
-    verb: string,
-  ): Promise<void> {
+  async function run(action: 'trash' | 'restore' | 'delete', verb: string) {
     setPending(action)
     setNotice(null)
 
@@ -131,28 +148,23 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
     }
   }
 
+  const busy = accountsLoading || load.loading
   const allSelected =
     load.messages.length > 0 && selected.size === load.messages.length
 
   return (
-    <section className="mailbox">
-      <div className="mailbox__tabs" role="tablist" aria-label="Mailbox">
-        {(['inbox', 'trash'] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={view === tab}
-            className={`tab${view === tab ? ' tab--active' : ''}`}
-            onClick={() => {
-              setView(tab)
-              setSelected(new Set())
-            }}
-          >
-            {tab === 'inbox' ? 'Inbox' : 'Trash'}
-          </button>
-        ))}
-      </div>
+    <section className="view">
+      <header className="view__head">
+        <h1>
+          {mode === 'trash' ? <TrashIcon size={20} /> : <MailIcon size={20} />}
+          {mode === 'trash' ? 'Trash' : 'Inbox'}
+        </h1>
+        {mode === 'trash' && (
+          <p className="hint">
+            Gmail empties this automatically after thirty days.
+          </p>
+        )}
+      </header>
 
       <form
         className="mailbox__search"
@@ -175,26 +187,29 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
           />
         </div>
 
-        <label htmlFor="account" className="sr-only">
-          Account
-        </label>
-        <select
-          id="account"
-          value={accountId}
-          onChange={(event) => setAccountId(event.target.value)}
-        >
-          <option value="">All accounts</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.gmailAddress}
-            </option>
-          ))}
-        </select>
+        {accounts.length > 1 && (
+          <>
+            <label htmlFor="account" className="sr-only">
+              Account
+            </label>
+            <select
+              id="account"
+              value={accountId}
+              onChange={(event) => setAccountId(event.target.value)}
+            >
+              <option value="">All accounts</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.gmailAddress}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
         <button type="submit">Search</button>
       </form>
 
-      {/* Gmail's own syntax, so anyone who uses Gmail already knows it. */}
       <p className="hint mailbox__syntax">
         Gmail search syntax works here — <code>from:</code>, <code>subject:</code>,{' '}
         <code>older_than:30d</code>, <code>has:attachment</code>,{' '}
@@ -203,6 +218,7 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
 
       <div role="status" aria-live="polite">
         {notice && <p className="notice">{notice}</p>}
+        {busy && <span className="sr-only">Loading messages</span>}
       </div>
 
       {load.problems.length > 0 && (
@@ -218,13 +234,10 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
 
       {selected.size > 0 && (
         <div className="bulkbar">
-          <span>
-            {selected.size} selected
-            {selectedRows.length !== selected.size && ' on this page'}
-          </span>
+          <span>{selected.size} selected</span>
 
           <div className="bulkbar__actions">
-            {view === 'inbox' ? (
+            {mode === 'inbox' ? (
               <button
                 type="button"
                 className="icon-btn"
@@ -245,10 +258,7 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
                   {pending === 'restore' ? 'Restoring…' : 'Restore'}
                 </button>
 
-                {/*
-                  Permanent deletion is never a one-click action: it opens a
-                  type-to-confirm dialog. There is no undo (ADR 0002).
-                */}
+                {/* Never one click: opens a type-to-confirm dialog (ADR 0002). */}
                 <button
                   type="button"
                   className="btn-danger icon-btn"
@@ -264,12 +274,13 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
         </div>
       )}
 
-      {load.loading && <p className="hint">Searching…</p>}
-      {load.error && <p className="bad">{load.error}</p>}
+      {busy && <MessageListSkeleton />}
 
-      {!load.loading && !load.error && load.messages.length === 0 && (
+      {!busy && load.error && <p className="bad">{load.error}</p>}
+
+      {!busy && !load.error && load.messages.length === 0 && (
         <p className="hint">
-          {view === 'trash'
+          {mode === 'trash'
             ? 'Trash is empty.'
             : applied
               ? 'Nothing matched that search.'
@@ -277,7 +288,7 @@ export function MailboxPage({ accounts }: { accounts: ConnectedAccount[] }) {
         </p>
       )}
 
-      {load.messages.length > 0 && (
+      {!busy && load.messages.length > 0 && (
         <>
           <label className="selectall">
             <input

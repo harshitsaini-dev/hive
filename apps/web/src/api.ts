@@ -64,6 +64,17 @@ export interface SearchResult {
   skipped: { accountId: string; gmailAddress: string; reason: string }[]
 }
 
+export interface CleanupRule {
+  id: string
+  accountId: string
+  query: string
+  /** Always 'trash' — rules cannot delete permanently. */
+  action: 'trash'
+  schedule: 'manual' | 'daily' | 'weekly'
+  enabled: boolean
+  lastRunAt: string | null
+}
+
 export const api = {
   requestCode: (email: string) =>
     request<{ sent: true; expiresInMinutes: number }>('/auth/otp/request', {
@@ -121,4 +132,45 @@ export const api = {
         confirm: 'permanently delete',
       }),
     }),
+
+  sendMessage: (message: {
+    accountId: string
+    to: string
+    subject: string
+    body: string
+  }) =>
+    request<{ id: string; threadId: string }>('/messages/send', {
+      method: 'POST',
+      body: JSON.stringify(message),
+    }),
+
+  listRules: () => request<{ rules: CleanupRule[] }>('/rules'),
+
+  /**
+   * No `action` field: rules always trash. The server does not accept one,
+   * so a scheduled permanent deletion cannot be created by any request.
+   */
+  createRule: (rule: {
+    accountId: string
+    query: string
+    schedule: 'manual' | 'daily' | 'weekly'
+  }) =>
+    request<{ rule: CleanupRule }>('/rules', {
+      method: 'POST',
+      body: JSON.stringify(rule),
+    }),
+
+  runRule: (id: string) =>
+    request<{ trashed: number; truncated: boolean }>(`/rules/${id}/run`, {
+      method: 'POST',
+    }),
+
+  setRuleEnabled: (id: string, enabled: boolean) =>
+    request<void>(`/rules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+
+  deleteRule: (id: string) =>
+    request<void>(`/rules/${id}`, { method: 'DELETE' }),
 }

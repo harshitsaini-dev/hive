@@ -1,24 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
-import { api, ApiRequestError, type User } from './api.js'
-import {
-  AlertIcon,
-  CheckIcon,
-  HiveMark,
-  LogoutIcon,
-  MailIcon,
-  PlusIcon,
-  TrashIcon,
-} from './Icons.js'
-import { MailboxPage } from './MailboxPage.js'
-import { StatusScreen } from './StatusScreen.js'
-import { ThemeToggle } from './ThemeToggle.js'
-
-type Load =
-  | { state: 'loading' }
-  | { state: 'ready'; accounts: ConnectedAccount[] }
-  | { state: 'error'; message: string }
-  | { state: 'denied' }
+import { api, ApiRequestError } from '../api.js'
+import { AlertIcon, CheckIcon, PlusIcon, TrashIcon } from '../Icons.js'
+import { AccountListSkeleton } from '../Skeleton.js'
 
 /** Reads the outcome the OAuth callback appended to the URL, then clears it. */
 function useConnectOutcome(): string | null {
@@ -45,58 +29,31 @@ function useConnectOutcome(): string | null {
   return outcome
 }
 
-export function AccountsPage({
-  user,
-  onSignedOut,
-  onSessionLost,
+export function AccountsView({
+  loading,
+  accounts,
+  error,
+  onChanged,
 }: {
-  user: User
-  onSignedOut: () => void
-  onSessionLost: () => void
+  loading: boolean
+  accounts: ConnectedAccount[]
+  error: string | null
+  onChanged: () => Promise<void> | void
 }) {
-  const [load, setLoad] = useState<Load>({ state: 'loading' })
   const [connecting, setConnecting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const outcome = useConnectOutcome()
-
-  const refresh = useCallback(async () => {
-    try {
-      const { accounts } = await api.listAccounts()
-      setLoad({ state: 'ready', accounts })
-    } catch (caught) {
-      // The session ended underneath us — expired, or revoked elsewhere.
-      if (
-        caught instanceof ApiRequestError &&
-        (caught.status === 401 || caught.status === 403)
-      ) {
-        setLoad({ state: 'denied' })
-        return
-      }
-
-      setLoad({
-        state: 'error',
-        message:
-          caught instanceof ApiRequestError
-            ? caught.message
-            : 'Could not load your accounts.',
-      })
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
 
   async function connect() {
     setConnecting(true)
-    setError(null)
+    setActionError(null)
     try {
       const { url } = await api.startConnect()
       // Full navigation, not a popup — Google blocks its consent screen in
       // many embedded and popup contexts.
       window.location.href = url
     } catch (caught) {
-      setError(
+      setActionError(
         caught instanceof ApiRequestError
           ? caught.message
           : 'Could not start the connection.',
@@ -116,9 +73,9 @@ export function AccountsPage({
 
     try {
       await api.disconnect(account.id)
-      await refresh()
+      await onChanged()
     } catch (caught) {
-      setError(
+      setActionError(
         caught instanceof ApiRequestError
           ? caught.message
           : 'Could not disconnect that account.',
@@ -126,36 +83,16 @@ export function AccountsPage({
     }
   }
 
-  if (load.state === 'denied') {
-    return (
-      <StatusScreen
-        kind="access-denied"
-        actions={[{ label: 'Sign in again', primary: true, onClick: onSessionLost }]}
-      />
-    )
-  }
-
   return (
-    <main className="shell">
-      <header className="topbar">
-        <h1 className="brand">
-          <HiveMark size={26} />
-          Hive
+    <section className="view">
+      <header className="view__head">
+        <h1>
+          <PlusIcon size={20} />
+          Accounts
         </h1>
-        <div className="topbar__user">
-          <ThemeToggle />
-          <span className="hint">{user.email}</span>
-          <button
-            type="button"
-            className="link icon-btn"
-            onClick={() => {
-              void api.logout().finally(onSignedOut)
-            }}
-          >
-            <LogoutIcon size={15} />
-            Sign out
-          </button>
-        </div>
+        <p className="hint">
+          Every mailbox Hive can read, clean and send from.
+        </p>
       </header>
 
       <div role="status" aria-live="polite">
@@ -165,14 +102,12 @@ export function AccountsPage({
             {outcome}
           </p>
         )}
+        {loading && <span className="sr-only">Loading accounts</span>}
       </div>
 
-      <section className="card">
+      <div className="card">
         <div className="card__head">
-          <h2>
-            <MailIcon size={17} />
-            Connected accounts
-          </h2>
+          <h2>Connected</h2>
           <button
             type="button"
             className="icon-btn"
@@ -184,19 +119,19 @@ export function AccountsPage({
           </button>
         </div>
 
-        {load.state === 'loading' && <p className="hint">Loading…</p>}
+        {loading && <AccountListSkeleton />}
 
-        {load.state === 'error' && <p className="bad">{load.message}</p>}
+        {!loading && error && <p className="bad">{error}</p>}
 
-        {load.state === 'ready' && load.accounts.length === 0 && (
+        {!loading && !error && accounts.length === 0 && (
           <p className="hint">
             No accounts yet. Connect one to search and clean it from here.
           </p>
         )}
 
-        {load.state === 'ready' && load.accounts.length > 0 && (
+        {!loading && accounts.length > 0 && (
           <ul className="accounts">
-            {load.accounts.map((account) => (
+            {accounts.map((account) => (
               <li key={account.id}>
                 <div>
                   <strong>{account.gmailAddress}</strong>
@@ -219,15 +154,11 @@ export function AccountsPage({
             ))}
           </ul>
         )}
-      </section>
-
-      <div role="alert" aria-live="assertive">
-        {error && <p className="bad">{error}</p>}
       </div>
 
-      {load.state === 'ready' && load.accounts.length > 0 && (
-        <MailboxPage accounts={load.accounts} />
-      )}
-    </main>
+      <div role="alert" aria-live="assertive">
+        {actionError && <p className="bad">{actionError}</p>}
+      </div>
+    </section>
   )
 }

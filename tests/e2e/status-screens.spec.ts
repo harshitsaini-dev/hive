@@ -92,7 +92,7 @@ test.describe('status screens', () => {
 
     await page.getByLabel('Six-digit code').fill(code)
     await page.getByRole('button', { name: 'Sign in' }).click()
-    await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
+    await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()
 
     // Simulate the session ending server-side while the page is still open.
     await page.route('**/api/accounts', (route) =>

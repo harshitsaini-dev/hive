@@ -11,6 +11,8 @@ import { loadDevTls } from './tls.js'
 import { authRouter } from './routes/auth.js'
 import { accountsRouter, oauthCallback } from './routes/accounts.js'
 import { messagesRouter } from './routes/messages.js'
+import { rulesRouter } from './routes/rules.js'
+import { startRuleScheduler } from './rules-runner.js'
 
 const app = express()
 
@@ -51,6 +53,7 @@ app.get(
 app.use('/auth', authRouter)
 app.use('/accounts', accountsRouter)
 app.use('/messages', messagesRouter)
+app.use('/rules', rulesRouter)
 
 /**
  * Mounted at whatever path GOOGLE_REDIRECT_URI names, so the route and the URI
@@ -59,8 +62,6 @@ app.use('/messages', messagesRouter)
  * problem rather than a routing one.
  */
 app.get(new URL(config.GOOGLE_REDIRECT_URI).pathname, ...oauthCallback)
-
-// Still to come: /rules (Phase 5).
 
 app.use((_req, _res, next) => next(notFound('No such endpoint')))
 app.use(errorHandler)
@@ -81,7 +82,7 @@ wss.on('connection', (socket) => {
   socket.on('error', (error) => console.error('websocket error:', error))
 })
 
-// Cleanup-rule scheduling is registered here in Phase 5.
+startRuleScheduler()
 
 server.listen(config.PORT, () => {
   console.log(`hive server on ${scheme}://localhost:${config.PORT}  [${config.NODE_ENV}]`)

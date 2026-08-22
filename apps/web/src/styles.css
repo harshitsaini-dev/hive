@@ -957,3 +957,360 @@ select {
   justify-content: flex-end;
   margin-top: 1.25rem;
 }
+
+/* ---- cleanup rules ------------------------------------------------------- */
+
+.rules {
+  margin-top: 2rem;
+}
+
+.rules__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface-2);
+}
+
+.rules__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rules__row select {
+  flex: 1 1 12rem;
+}
+
+.rules__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.15rem 0 0.5rem;
+}
+
+/* One-tap way to fill in a query without having to know the syntax first. */
+.chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.rules__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules__list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+/* A paused rule should read as inactive at a glance. */
+.rules__list li[data-enabled='false'] {
+  opacity: 0.6;
+}
+
+.rules__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.rules__meta code {
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  background: var(--surface-2);
+  font-size: 0.82rem;
+}
+
+.rules__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* ---- compose ------------------------------------------------------------- */
+
+.compose {
+  margin-top: 2rem;
+}
+
+.compose__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.compose__form label {
+  margin-top: 0.5rem;
+}
+
+textarea {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  /* Vertical only — horizontal resize breaks the card layout. */
+  resize: vertical;
+}
+
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.compose__form button[type='submit'] {
+  align-self: flex-start;
+  margin-top: 0.75rem;
+}
+
+/* ---- app shell: sidebar layout ------------------------------------------ */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.app__bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app__bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.app__body {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+}
+
+.app__nav {
+  display: flex;
+  position: sticky;
+  top: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  width: 13rem;
+  padding: 1rem 0.75rem;
+  border-right: 1px solid var(--border);
+}
+
+.navitem {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.5rem;
+  background: none;
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: left;
+}
+
+.navitem:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.navitem[aria-current='page'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* A left rule marks the current section without relying on colour alone. */
+.navitem[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: 0.15rem;
+  width: 3px;
+  height: 1.25rem;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.navitem {
+  position: relative;
+}
+
+.navitem__count {
+  margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 0.72rem;
+}
+
+.app__main {
+  flex: 1;
+  min-width: 0;
+  padding: 1.75rem 1.5rem 4rem;
+  padding-bottom: max(4rem, env(safe-area-inset-bottom));
+}
+
+.app__menu {
+  display: none;
+}
+
+.view {
+  max-width: 46rem;
+}
+
+.view__head {
+  margin-bottom: 1.25rem;
+}
+
+.view__head h1 {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 1.5rem;
+}
+
+.view__head h1 svg {
+  color: var(--accent);
+}
+
+.view__head .hint {
+  margin-top: 0.3rem;
+}
+
+@media (max-width: 48rem) {
+  /*
+   * Below this width the sidebar would eat most of the screen, so it becomes
+   * a drawer toggled from the bar. Hidden with display:none rather than a
+   * transform so its buttons leave the tab order entirely while closed.
+   */
+  .app__menu {
+    display: inline-flex;
+    order: -1;
+  }
+
+  .app__nav {
+    display: none;
+    position: static;
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .app__nav[data-open='true'] {
+    display: flex;
+  }
+
+  .app__body {
+    flex-direction: column;
+  }
+
+  .app__main {
+    width: 100%;
+    padding: 1.25rem 1rem 3rem;
+  }
+
+  /* The address is the least useful thing in a cramped bar. */
+  .app__user {
+    display: none;
+  }
+}
+
+/* ---- skeletons ----------------------------------------------------------- */
+
+.skeleton {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--border) 37%,
+    var(--surface-2) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+/*
+ * A sweeping gradient on a dozen blocks is a lot of motion. Reduced-motion
+ * users get a static tint instead — still clearly a placeholder, no movement.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    background: var(--surface-2);
+    animation: none;
+  }
+}
+
+.message--skeleton {
+  cursor: default;
+}
+
+.message--skeleton:hover {
+  background: none;
+}
+
+.page-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 30rem;
+  margin: 3rem auto 0;
+}
+
+.page-skeleton__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+}

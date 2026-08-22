@@ -115,7 +115,7 @@ test.describe('mailbox', () => {
   test.beforeEach(async ({ page }) => {
     await stubApi(page)
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
   })
 
   test('lists mail and offers Gmail search syntax', async ({ page }) => {
@@ -139,7 +139,7 @@ test.describe('mailbox', () => {
   })
 
   test('the Trash tab offers restore and delete forever', async ({ page }) => {
-    await page.getByRole('tab', { name: 'Trash' }).click()
+    await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
 
     await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible()
@@ -153,7 +153,7 @@ test.describe('permanent deletion', () => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByRole('tab', { name: 'Trash' }).click()
+    await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
     await page.getByRole('button', { name: 'Delete forever' }).click()
 
@@ -179,7 +179,7 @@ test.describe('permanent deletion', () => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByRole('tab', { name: 'Trash' }).click()
+    await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
 
     await page.getByRole('button', { name: 'Delete forever' }).click()
@@ -197,7 +197,7 @@ test.describe('permanent deletion', () => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByRole('tab', { name: 'Trash' }).click()
+    await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
     await page.getByRole('button', { name: 'Delete forever' }).click()
 
@@ -219,7 +219,7 @@ test.describe('permanent deletion', () => {
     await stubApi(page)
     await page.goto('/')
 
-    await page.getByRole('tab', { name: 'Trash' }).click()
+    await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
     await page.getByRole('button', { name: 'Delete forever' }).click()
 

@@ -2,16 +2,18 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { listAccountsForOwner, writeAuditEntry } from '@hive/db'
 import {
+  buildRawMessage,
   getMessageFull,
   getMessageMetadata,
   listAllMessageIds,
   listMessages,
   permanentlyDeleteMessages,
   ScopeNotGrantedError,
+  sendMessage,
   trashMessages,
   untrashMessages,
 } from '@hive/gmail-client'
-import { asyncRoute, badRequest } from '../errors.js'
+import { asyncRoute, badRequest, HttpError } from '../errors.js'
 import { authed, requireAuth } from '../middleware/auth.js'
 import { scopeMissing, withGmail } from '../gmail.js'
 
@@ -285,5 +287,75 @@ messagesRouter.post(
     })
 
     res.json(result)
+  }),
+)
+
+const sendSchema = z.object({
+  accountId: z.string().min(1),
+  to: z.string().trim().email('Enter a valid recipient address').max(254),
+  subject: z.string().trim().max(998).default(''),
+  body: z.string().max(100_000).default(''),
+})
+
+/**
+ * POST /messages/send
+ *
+ * Gmail enforces its own daily send limits — roughly 500 for consumer
+ * accounts, 2,000 for Workspace. Hive does not track that count; it surfaces
+ * Google's own rejection instead of guessing, because a wrong local counter
+ * would either block legitimate sends or promise capacity that is not there.
+ */
+messagesRouter.post(
+  '/send',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const parsed = sendSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw badRequest(parsed.error.issues[0]?.message ?? 'Invalid message')
+    }
+
+    const { user } = authed(req)
+    const { accountId, to, subject, body } = parsed.data
+
+    const result = await withGmail(user.id, accountId, async (session) => {
+      const raw = buildRawMessage({
+        // The From address is the connected mailbox, never client-supplied —
+        // Gmail would reject a mismatch anyway, and accepting one invites
+        // spoofing attempts against the endpoint.
+        from: session.account.gmail_address,
+        to,
+        subject,
+        body,
+      })
+
+      let sent
+      try {
+        sent = await sendMessage(session.accessToken, raw)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : ''
+        // Google reports the daily cap as a 429. Say so plainly rather than
+        // letting it surface as a generic failure.
+        if (message.includes('429') || /rate|quota|limit/i.test(message)) {
+          throw new HttpError(
+            429,
+            'send_quota_reached',
+            'Gmail has hit its daily send limit for this account. Try again tomorrow.',
+          )
+        }
+        throw error
+      }
+
+      await writeAuditEntry({
+        userId: user.id,
+        accountId: session.account.id,
+        action: 'send',
+        // Recipient and subject only. Never the body — see the privacy rules.
+        details: { to, subject },
+      })
+
+      return { id: sent.id, threadId: sent.threadId }
+    })
+
+    res.status(201).json(result)
   }),
 )
