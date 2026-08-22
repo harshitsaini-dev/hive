@@ -2,6 +2,14 @@ import { defineConfig, devices } from '@playwright/test'
 
 const isCI = !!process.env.CI
 
+/**
+ * Headed runs finish in a few seconds, which is too fast to actually watch.
+ * A small delay between actions makes the run followable without meaningfully
+ * slowing the suite. Override with SLOWMO=0 to turn it off, or a larger number
+ * when demonstrating a flow.
+ */
+const slowMo = isCI ? 0 : Number(process.env.SLOWMO ?? 400)
+
 export default defineConfig({
   testDir: './tests/e2e',
   forbidOnly: isCI,
@@ -22,7 +30,13 @@ export default defineConfig({
   },
 
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: { slowMo },
+      },
+    },
   ],
 
   webServer: [

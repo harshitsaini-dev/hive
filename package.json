@@ -21,11 +21,15 @@
     "format": "prettier --write .",
     "db:migrate": "npm run migrate --workspace @hive/db",
     "test:e2e": "playwright test",
-    "test:e2e:ci": "CI=1 playwright test"
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:headless": "cross-env CI=1 playwright test",
+    "test:e2e:report": "playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
     "@types/node": "^22.10.0",
+    "cross-env": "^10.1.0",
     "eslint": "^9.17.0",
     "npm-run-all2": "^7.0.2",
     "prettier": "^3.4.2",

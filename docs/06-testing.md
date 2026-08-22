@@ -43,12 +43,39 @@ export default defineConfig({
 })
 ```
 
-Locally, `slowMo` helps when you are actually watching a flow:
+## Watching the tests run
+
 ```bash
-npx playwright test --headed --project=chromium
-npx playwright test --debug        # step through
-npx playwright test --ui           # time-travel runner
+npm run test:e2e          # headed — a real browser window, this is the default
+npm run test:e2e:ui       # the GUI runner: watch mode, time travel, DOM picker
+npm run test:e2e:debug    # step through one action at a time
+npm run test:e2e:headless # what CI runs, for a quick check
+npm run test:e2e:report   # open the HTML report from the last run
 ```
+
+`test:e2e:ui` is the one to reach for when you actually want to *see* what is
+happening. It opens Playwright's own interface with the test list on the left
+and a timeline you can scrub — hover any step and it shows the page as it was
+at that moment, with the locator highlighted. It re-runs on save, so it is
+also the fastest way to write a new test.
+
+Headed runs insert a 400ms pause between actions so they are followable at
+human speed. Override per-run:
+
+```bash
+SLOWMO=0 npm run test:e2e      # full speed
+SLOWMO=1200 npm run test:e2e   # slow enough to demo
+```
+
+On Windows PowerShell, set it as `$env:SLOWMO=1200` on its own line first.
+
+### Not every test opens a browser
+
+API tests use Playwright's `request` fixture and never launch one — they are
+much faster that way, and there is nothing to look at. Browser-visible specs
+live in `tests/e2e/shell.spec.ts` and the feature specs that follow; pure API
+assertions belong in `smoke.spec.ts` and its successors. If a headed run looks
+like it skipped something, that is why.
 
 ## What must be covered
 
