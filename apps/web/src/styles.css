@@ -1314,3 +1314,60 @@ textarea:focus-visible {
   border-radius: 0.9rem;
   background: var(--surface);
 }
+
+/* ---- legal pages --------------------------------------------------------- */
+
+.legal {
+  max-width: 42rem;
+}
+
+.legal h1 {
+  margin-bottom: 0.25rem;
+}
+
+.legal h2 {
+  display: block;
+  margin: 2rem 0 0.6rem;
+  font-size: 1.1rem;
+}
+
+.legal p,
+.legal li {
+  color: var(--muted);
+}
+
+.legal ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.legal strong {
+  color: var(--ink);
+}
+
+.legal code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  background: var(--surface-2);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+/* Keeps short proper nouns from breaking across lines mid-phrase. */
+.nowrap {
+  white-space: nowrap;
+}
+
+.landing__foot {
+  display: flex;
+  gap: 1.25rem;
+  justify-content: center;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+  padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}

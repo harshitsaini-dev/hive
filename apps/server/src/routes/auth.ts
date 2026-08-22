@@ -14,6 +14,7 @@ import { hashToken, randomOtpCode, safeEqual } from '../crypto.js'
 import { sendOtpEmail } from '../email.js'
 import { asyncRoute, badRequest, tooManyRequests } from '../errors.js'
 import { authed, requireAuth } from '../middleware/auth.js'
+import { rateLimit, resetRateLimits } from '../middleware/rate-limit.js'
 import { endSession, startSession } from '../auth/session.js'
 
 export const authRouter: Router = Router()
@@ -163,6 +164,37 @@ if (!config.isProduction) {
       if (!code) throw badRequest('No code has been issued for that address')
 
       res.json({ code })
+    }),
+  )
+
+  /**
+   * POST /auth/test/reset-rate-limits
+   *
+   * The limiter buckets by IP, and every test shares one. Without a way to
+   * clear it, a test that deliberately trips the limit poisons every test that
+   * runs after it. Registered only outside production, same as the route above.
+   */
+  /**
+   * GET /auth/test/rate-limit-probe
+   *
+   * A dedicated bucket with a tiny allowance, so the limiter can be tested
+   * deterministically. Exercising the real /auth limit instead would drain a
+   * bucket every other test shares, making unrelated tests fail depending on
+   * execution order.
+   */
+  authRouter.get(
+    '/test/rate-limit-probe',
+    rateLimit('probe', { max: 3, windowMs: 60_000 }),
+    asyncRoute(async (_req, res) => {
+      res.json({ ok: true })
+    }),
+  )
+
+  authRouter.post(
+    '/test/reset-rate-limits',
+    asyncRoute(async (_req, res) => {
+      resetRateLimits()
+      res.status(204).end()
     }),
   )
 }

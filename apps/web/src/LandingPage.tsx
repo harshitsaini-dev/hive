@@ -37,7 +37,13 @@ const FEATURES = [
   },
 ]
 
-export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
+export function LandingPage({
+  onGetStarted,
+  onLegal,
+}: {
+  onGetStarted: () => void
+  onLegal: (kind: 'privacy' | 'terms') => void
+}) {
   return (
     <div className="landing">
       <header className="landing__bar">
@@ -118,6 +124,15 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
           </ul>
         </section>
       </main>
+
+      <footer className="landing__foot">
+        <button type="button" className="link" onClick={() => onLegal('privacy')}>
+          Privacy
+        </button>
+        <button type="button" className="link" onClick={() => onLegal('terms')}>
+          Terms
+        </button>
+      </footer>
     </div>
   )
 }

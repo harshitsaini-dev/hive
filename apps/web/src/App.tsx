@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiRequestError, type User } from './api.js'
 import { LandingPage } from './LandingPage.js'
+import { LegalPage, type LegalKind } from './LegalPage.js'
 import { LoginPage } from './LoginPage.js'
 import { AppShell } from './AppShell.js'
 import { PageSkeleton } from './Skeleton.js'
@@ -14,11 +15,21 @@ type Auth =
   | { state: 'unreachable'; detail: string | null }
 
 /** The only paths the app serves. Anything else is a 404. */
-const KNOWN_PATHS = new Set(['/', '/accounts'])
+const KNOWN_PATHS = new Set(['/', '/accounts', '/privacy', '/terms'])
 
 export function App() {
   const [auth, setAuth] = useState<Auth>({ state: 'checking' })
   const online = useOnline()
+
+  /**
+   * Legal pages are their own route rather than a modal: Google's OAuth
+   * verification requires a stable, linkable URL for each, and people expect
+   * to be able to send someone the link.
+   */
+  const [legal, setLegal] = useState<LegalKind | null>(() => {
+    const path = window.location.pathname
+    return path === '/privacy' ? 'privacy' : path === '/terms' ? 'terms' : null
+  })
 
   /**
    * Signed-out visitors see the landing page first. `?signin` sends them
@@ -52,6 +63,20 @@ export function App() {
   }, [])
 
   useEffect(check, [check])
+
+  // Reachable whether or not you are signed in, and before the session check
+  // resolves — a privacy policy you can only read once logged in is useless.
+  if (legal) {
+    return (
+      <LegalPage
+        kind={legal}
+        onBack={() => {
+          setLegal(null)
+          window.history.pushState({}, '', '/')
+        }}
+      />
+    )
+  }
 
   // Offline wins over everything: nothing else on screen would be truthful.
   if (!online) {
@@ -111,7 +136,13 @@ export function App() {
         onBack={() => setWantsSignIn(false)}
       />
     ) : (
-      <LandingPage onGetStarted={() => setWantsSignIn(true)} />
+      <LandingPage
+        onGetStarted={() => setWantsSignIn(true)}
+        onLegal={(kind) => {
+          setLegal(kind)
+          window.history.pushState({}, '', `/${kind}`)
+        }}
+      />
     )
   }
 

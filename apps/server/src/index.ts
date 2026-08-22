@@ -8,6 +8,7 @@ import { db } from '@hive/db'
 import { config } from './config.js'
 import { errorHandler, asyncRoute, notFound } from './errors.js'
 import { loadDevTls } from './tls.js'
+import { rateLimit } from './middleware/rate-limit.js'
 import { authRouter } from './routes/auth.js'
 import { accountsRouter, oauthCallback } from './routes/accounts.js'
 import { messagesRouter } from './routes/messages.js'
@@ -50,9 +51,30 @@ app.get(
   }),
 )
 
-app.use('/auth', authRouter)
+/*
+ * A flood guard, not the anti-brute-force control.
+ *
+ * /auth/me runs on every page load, so this has to sit well above real usage
+ * or ordinary browsing trips it. What actually protects login codes is
+ * database-backed and much tighter: five codes per address per fifteen
+ * minutes, five wrong guesses per code, single use. Those survive restarts
+ * and cannot be dodged by changing IP; this cannot claim either.
+ */
+app.use('/auth', rateLimit('auth', { max: 200, windowMs: 60_000 }), authRouter)
 app.use('/accounts', accountsRouter)
-app.use('/messages', messagesRouter)
+/*
+ * Message routes fan out to Gmail, whose own per-user quota is the scarce
+ * resource. A runaway client loop would burn it for the whole account.
+ */
+app.use(
+  '/messages',
+  rateLimit('messages', {
+    max: 120,
+    windowMs: 60_000,
+    message: 'Slow down a moment — too many mailbox requests in a row.',
+  }),
+  messagesRouter,
+)
 app.use('/rules', rulesRouter)
 
 /**
