@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Honeycomb cell. Flat-topped hexagon, which reads more like a comb than
+       the pointy-topped orientation does at 16px. -->
+  <path d="M16 2.5 27.5 9v14L16 29.5 4.5 23V9z" fill="#d99a2b"/>
+  <path d="M16 9.5 22 13v6l-6 3.5L10 19v-6z" fill="#faf7f0"/>
+</svg>

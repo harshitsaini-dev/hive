@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspaces --if-present
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Migrate the test database
+        run: npm run db:migrate
+
+      # Real Google credentials are never needed in CI — nothing here talks to
+      # Gmail. These exist only to satisfy boot-time config validation, and are
+      # deliberately checked in: they protect nothing. Both keys must decode to
+      # exactly 32 bytes or the server refuses to start.
+      - name: Run Playwright suite
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+          GOOGLE_CLIENT_ID: ci.apps.googleusercontent.com
+          GOOGLE_CLIENT_SECRET: ci-not-a-real-secret
+          GOOGLE_REDIRECT_URI: http://localhost:3000/auth/google/callback
+          TOKEN_ENCRYPTION_KEY: Y2ktb25seS10b2tlbi1rZXktbm90LWZvci1yZWFsICA=
+          SESSION_SECRET: Y2ktb25seS1zZXNzaW9uLXNlY3JldC1ub3QtcmVhbCA=
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

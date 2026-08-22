@@ -27,3 +27,8 @@ blob-report/
 Thumbs.db
 .idea/
 *.log
+
+# Local dev database
+local.db
+local.db-*
+*.tsbuildinfo

@@ -1,0 +1,73 @@
+/*
+ * Placeholder styling only. The real visual language is the Claymorphism token
+ * set carried over from Orbit — that lands in Phase 8 (see the roadmap), and
+ * these rules are expected to be replaced wholesale rather than extended.
+ */
+
+:root {
+  --bg: #faf7f0;
+  --surface: #fffdf8;
+  --ink: #2b2620;
+  --muted: #6f675c;
+  --accent: #d99a2b;
+  --ok: #2f7d54;
+  --bad: #b4402f;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171512;
+    --surface: #211e1a;
+    --ink: #f3eee4;
+    --muted: #a89f92;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3rem);
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin: 0.25rem 0 2rem;
+  color: var(--muted);
+}
+
+.status {
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+.status p {
+  margin: 0;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.bad {
+  color: var(--bad);
+}
