@@ -7,17 +7,14 @@
 
   "rewrites": [
     {
-      "comment": "The API is proxied through this origin rather than called cross-site. Sessions are HttpOnly SameSite=Lax cookies, which a browser will not attach to a cross-origin fetch — proxying keeps them same-origin, exactly as the Vite dev proxy does locally.",
       "source": "/api/:path*",
       "destination": "https://hive-api-s1u3.onrender.com/:path*"
     },
     {
-      "comment": "Google redirects the browser here after consent. It must reach the API, not the SPA — the handler exchanges the code and then redirects back into the app.",
       "source": "/auth/google/callback",
       "destination": "https://hive-api-s1u3.onrender.com/auth/google/callback"
     },
     {
-      "comment": "Everything else is client-routed: /privacy, /terms and the app itself. Without this a refresh on any path but / returns a 404 from the CDN.",
       "source": "/((?!assets/|icons/|manifest.webmanifest|sw.js|offline.html|favicon.svg|og-image.png).*)",
       "destination": "/index.html"
     }
@@ -41,14 +38,12 @@
       ]
     },
     {
-      "comment": "Vite fingerprints these filenames, so the content at a given URL never changes and can be cached indefinitely.",
       "source": "/assets/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     },
     {
-      "comment": "The worker must never be cached, or a deploy cannot replace it and users are stuck on an old shell.",
       "source": "/sw.js",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }

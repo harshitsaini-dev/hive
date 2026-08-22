@@ -20,6 +20,34 @@ is a miserable thing to debug.
 The alternative — `SameSite=None` cookies plus CORS credentials — works, but
 widens CSRF exposure for no benefit here.
 
+## What each rule in `vercel.json` is for
+
+JSON has no comments and Vercel's schema rejects unknown keys — a `"comment"`
+field fails validation outright, which is how the first deploy attempt was
+rejected. So the reasoning lives here instead.
+
+**Rewrites**, in order:
+
+1. `/api/:path*` → Render. The proxy described above.
+2. `/auth/google/callback` → Render. Google redirects the browser here after
+   consent, and it must reach the API rather than the SPA — the handler
+   exchanges the code for tokens and then redirects back into the app.
+3. Everything else → `/index.html`. Client-side routing for `/privacy`,
+   `/terms` and the app itself. Without it, refreshing on any path but `/`
+   returns a CDN 404. The negative lookahead exempts real files —
+   `assets/`, `icons/`, the manifest, the service worker, the offline page,
+   the favicon and the link-preview image — which must be served as
+   themselves, not as the SPA shell.
+
+**Headers:**
+
+- The security set applies everywhere. `X-Frame-Options: DENY` matters more
+  than usual here: an app holding mailbox access should never be framed.
+- `/assets/*` is cached forever because Vite fingerprints those filenames, so
+  the content at a given URL never changes.
+- `/sw.js` is explicitly *not* cached. A cached service worker cannot be
+  replaced by a deploy, which strands users on an old shell indefinitely.
+
 ---
 
 ## 1. Turso
