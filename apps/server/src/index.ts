@@ -18,6 +18,14 @@ import { startRuleScheduler } from './rules-runner.js'
 const app = express()
 
 app.disable('x-powered-by')
+
+/*
+ * Render and Vercel both sit in front of this process, so the socket address
+ * is the proxy's, not the caller's. Without this every request looks like it
+ * comes from one IP and the rate limiter buckets the whole internet together.
+ * 1 = trust exactly one hop, which is what a single platform proxy is.
+ */
+if (config.isProduction) app.set('trust proxy', 1)
 app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser())
 app.use(

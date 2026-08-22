@@ -38,3 +38,5 @@ local.db-*
 
 # Local TLS certificates (scripts/make-cert.sh)
 .certs/
+
+ci-boot.db

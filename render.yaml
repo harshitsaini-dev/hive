@@ -1,0 +1,61 @@
+# Render blueprint for the Hive API.
+#
+# Create via Render → New → Blueprint, pointed at this repository. Secrets are
+# marked sync:false so Render prompts for them rather than reading them from
+# here — nothing in this file is a credential.
+#
+# Docs: docs/04-deployment.md
+
+services:
+  - type: web
+    name: hive-api
+    runtime: node
+    plan: free
+    region: singapore # Closest region to the users this is built for.
+
+    # The repo is an npm workspace monorepo, so install from the root and let
+    # the workspace resolve. `npm ci` needs the root lockfile.
+    buildCommand: npm ci && npm run build --workspace @hive/server
+    startCommand: npm run start --workspace @hive/server
+
+    # Liveness only — deliberately does not touch the database, so a brief
+    # Turso blip cannot cause Render to restart a perfectly healthy process.
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '22'
+
+      # Origin the browser loads the app from. Used for CORS and for the
+      # redirect back after the Google OAuth callback.
+      - key: WEB_ORIGIN
+        value: https://hive.harshitsaini.in
+
+      # Must match a redirect URI registered on the Google OAuth client
+      # exactly, and must be HTTPS — Google refuses restricted scopes
+      # otherwise. See docs/decisions/0002-permanent-delete.md.
+      - key: GOOGLE_REDIRECT_URI
+        value: https://hive.harshitsaini.in/auth/google/callback
+
+      - key: OTP_FROM_ADDRESS
+        value: Bee <no-reply@bee.harshitsaini.in>
+
+      # --- secrets: entered in the Render dashboard, never committed --------
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      # Losing this makes every stored Gmail token unreadable and forces every
+      # account to reconnect. Generate once, back it up somewhere safe.
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false

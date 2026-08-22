@@ -28,6 +28,23 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The API imports workspace packages that export TypeScript source, so a
+      # plain `node dist/index.js` cannot run it. This caught that once; keep
+      # it so a deploy never discovers it on Render instead.
+      - name: Server starts in production mode
+        run: node scripts/check-prod-boot.mjs
+        env:
+          NODE_ENV: production
+          PORT: '3999'
+          WEB_ORIGIN: https://hive.example
+          GOOGLE_CLIENT_ID: ci.apps.googleusercontent.com
+          GOOGLE_CLIENT_SECRET: ci-not-a-real-secret
+          GOOGLE_REDIRECT_URI: https://hive.example/auth/google/callback
+          RESEND_API_KEY: ci-not-a-real-key
+          TURSO_DATABASE_URL: file:./ci-boot.db
+          TOKEN_ENCRYPTION_KEY: Y2ktb25seS10b2tlbi1rZXktbm90LWZvci1yZWFsICA=
+          SESSION_SECRET: Y2ktb25seS1zZXNzaW9uLXNlY3JldC1ub3QtcmVhbCA=
+
   e2e:
     runs-on: ubuntu-latest
     steps:
