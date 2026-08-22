@@ -10,7 +10,7 @@
  * Also asserts the dev-only test routes are absent, since NODE_ENV=production
  * is the only thing keeping them off a public instance.
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const PORT = process.env.PORT ?? '3999'
@@ -24,31 +24,52 @@ const BOOT_TIMEOUT_MS = 60_000
  * shell:true — but passing an args array alongside it is deprecated, because
  * the arguments get concatenated rather than escaped. A single literal string
  * avoids both. Nothing here is interpolated, so there is nothing to escape.
+ *
+ * `detached` puts the child in its own process group. The chain is
+ * shell → npm → tsx → node, and killing only the shell orphans the rest: the
+ * server keeps the port and this script never exits, which is exactly how it
+ * hung CI the first time. Signalling the group takes the whole tree down.
  */
+const detached = process.platform !== 'win32'
+
 const server = spawn('npm run start --workspace @hive/server', {
   stdio: ['ignore', 'pipe', 'pipe'],
   shell: true,
+  detached,
 })
 
-let output = ''
-server.stdout.on('data', (chunk) => {
-  output += chunk
-  process.stdout.write(chunk)
-})
-server.stderr.on('data', (chunk) => {
-  output += chunk
-  process.stderr.write(chunk)
-})
+server.stdout.on('data', (chunk) => process.stdout.write(chunk))
+server.stderr.on('data', (chunk) => process.stderr.write(chunk))
 
 let exited = null
 server.on('exit', (code) => {
   exited = code
 })
 
-function fail(message) {
-  console.error(`\n✗ ${message}`)
-  server.kill('SIGTERM')
-  process.exitCode = 1
+function stopServer() {
+  if (exited !== null || server.pid === undefined) return
+
+  try {
+    if (detached) {
+      // A negative PID signals the whole process group.
+      process.kill(-server.pid, 'SIGKILL')
+    } else {
+      // Synchronous: process.exit() while an async spawn is still starting
+      // trips a libuv assertion on Windows, and the kill never lands.
+      spawnSync('taskkill', ['/PID', String(server.pid), '/T', '/F'], {
+        stdio: 'ignore',
+      })
+    }
+  } catch {
+    // Already gone.
+  }
+}
+
+/** Exits explicitly: leftover pipes would otherwise keep the loop alive. */
+function finish(ok, message) {
+  if (!ok) console.error(`\n✗ ${message}`)
+  stopServer()
+  process.exit(ok ? 0 : 1)
 }
 
 async function main() {
@@ -57,8 +78,7 @@ async function main() {
 
   while (Date.now() < deadline) {
     if (exited !== null) {
-      fail(`the server exited with code ${exited} before answering`)
-      return
+      finish(false, `the server exited with code ${exited} before answering`)
     }
 
     try {
@@ -75,13 +95,11 @@ async function main() {
   }
 
   if (!health) {
-    fail(`no response from ${BASE}/health within ${BOOT_TIMEOUT_MS / 1000}s`)
-    return
+    finish(false, `no response from ${BASE}/health within ${BOOT_TIMEOUT_MS / 1000}s`)
   }
 
   if (health.env !== 'production') {
-    fail(`expected env "production", got "${health.env}"`)
-    return
+    finish(false, `expected env "production", got "${health.env}"`)
   }
   console.log('✓ boots and reports production')
 
@@ -89,24 +107,17 @@ async function main() {
   // returns anything but 404, a deployed instance is handing out login codes.
   const leaked = await fetch(`${BASE}/auth/test/last-code?email=a@b.c`)
   if (leaked.status !== 404) {
-    fail(`test-only route is reachable in production (status ${leaked.status})`)
-    return
+    finish(false, `test-only route is reachable in production (status ${leaked.status})`)
   }
   console.log('✓ dev-only test routes are not mounted')
 
   // TLS is terminated by the platform, so the process itself must serve plain
-  // HTTP — that it answered over http:// at all already proves this.
+  // HTTP — answering over http:// at all already proves this.
   console.log('✓ serves plain HTTP for the platform proxy')
 
-  server.kill('SIGTERM')
+  finish(true)
 }
 
-main()
-  .catch((error) => {
-    fail(`unexpected failure: ${error}`)
-  })
-  .finally(async () => {
-    // Give the graceful-shutdown handler a moment before the process ends.
-    await sleep(1000)
-    server.kill('SIGKILL')
-  })
+main().catch((error) => {
+  finish(false, `unexpected failure: ${error}`)
+})
