@@ -1,0 +1,29 @@
+# Local GitHub CLI config (project-scoped auth — never commit)
+.gh-config/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+.next/
+.turbo/
+
+# Test artifacts
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.log
