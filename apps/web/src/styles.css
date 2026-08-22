@@ -1,61 +1,8 @@
 /*
- * Placeholder styling. The real visual language is the Claymorphism token set
- * carried over from Orbit — that lands in Phase 8 (see the roadmap), and these
- * rules are expected to be replaced wholesale rather than extended.
- *
- * Theming has three states. An explicit choice stamps data-theme on the root;
- * "system" removes it so prefers-color-scheme decides. Every colour therefore
- * needs a definition on bare :root, a dark override guarded against an
- * explicit light choice, and a data-theme="dark" override so the toggle wins
- * in both directions.
+ * Component styles. All colour, radius, shadow and easing values come from
+ * tokens.css — see design-system/MASTER.md for the rules this follows.
  */
-
-:root {
-  --bg: #faf7f0;
-  --surface: #fffdf8;
-  --surface-2: #f5efe3;
-  --border: #e8e0d0;
-  --ink: #2b2620;
-  --muted: #6f675c;
-  --accent: #b8801d;
-  --accent-ink: #ffffff;
-  --ok: #2f7d54;
-  --bad: #b4402f;
-  --warn-bg: #fdf3d8;
-  --warn-ink: #7a5a12;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #171512;
-    --surface: #211e1a;
-    --surface-2: #2a2622;
-    --border: #35302a;
-    --ink: #f3eee4;
-    --muted: #a89f92;
-    --accent: #e0a53a;
-    --accent-ink: #241a05;
-    --ok: #6cc294;
-    --bad: #f08b78;
-    --warn-bg: #3a2f14;
-    --warn-ink: #f0d69a;
-  }
-}
-
-:root[data-theme='dark'] {
-  --bg: #171512;
-  --surface: #211e1a;
-  --surface-2: #2a2622;
-  --border: #35302a;
-  --ink: #f3eee4;
-  --muted: #a89f92;
-  --accent: #e0a53a;
-  --accent-ink: #241a05;
-  --ok: #6cc294;
-  --bad: #f08b78;
-  --warn-bg: #3a2f14;
-  --warn-ink: #f0d69a;
-}
+@import './tokens.css';
 
 * {
   box-sizing: border-box;
@@ -1370,4 +1317,231 @@ textarea:focus-visible {
   padding: 1.5rem 1.25rem;
   padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
+}
+
+/* ==========================================================================
+   Claymorphism pass
+   --------------------------------------------------------------------------
+   Overrides the flat borders defined above with the clay elevation model:
+   containers and controls are raised, inputs are recessed. See
+   design-system/MASTER.md. Placed last so it wins without editing every rule
+   individually — the earlier declarations remain as the fallback shape.
+   ========================================================================== */
+
+/* --- raised surfaces ---------------------------------------------------- */
+
+.card,
+.feature,
+.status-screen__card,
+.page-skeleton__card {
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+}
+
+.accounts li,
+.rules__list li,
+.message,
+.rules__form,
+.mailbox__problems,
+.notice {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.notice {
+  background: var(--warn-bg);
+}
+
+.mailbox__problems {
+  background: var(--warn-bg);
+}
+
+/* Nested inside a raised card, so it recedes instead of stacking lift. */
+.rules__form {
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+}
+
+.bulkbar {
+  border: 0;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-floating);
+}
+
+.modal {
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+button {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  transition:
+    transform var(--duration-fast) var(--ease-clay),
+    box-shadow var(--duration-fast) var(--ease-clay);
+}
+
+/* Pressing pushes the surface in — the whole point of a tactile material. */
+button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-pressed);
+}
+
+button:disabled {
+  box-shadow: none;
+}
+
+/* Text buttons are not surfaces, so they get no elevation at all. */
+button.link {
+  border-radius: 0;
+  box-shadow: none;
+  transition: color var(--duration-fast) var(--ease-clay);
+}
+
+button.link:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-outline {
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.btn-danger {
+  background: var(--bad);
+  color: var(--bad-ink);
+}
+
+.chip {
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.tab {
+  box-shadow: none;
+}
+
+.tab:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+/* --- recessed: things you type into -------------------------------------- */
+
+input,
+select,
+textarea,
+.search-field {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+}
+
+/* The well already carries the recess; the inner input must not double it. */
+.search-field input {
+  background: none;
+  box-shadow: none;
+}
+
+/* Checkboxes keep the platform control — a restyled one loses its states. */
+input[type='checkbox'],
+input[type='radio'] {
+  background: none;
+  box-shadow: none;
+}
+
+.theme-toggle {
+  border: 0;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-pressed);
+}
+
+.theme-toggle__option {
+  transition:
+    background var(--duration-fast) var(--ease-clay),
+    color var(--duration-fast) var(--ease-clay);
+}
+
+/* The selected segment lifts out of the recessed track. */
+.theme-toggle__option[data-active='true'] {
+  box-shadow: var(--shadow-raised);
+}
+
+/* --- structure ----------------------------------------------------------- */
+
+.app__bar {
+  border-bottom: 0;
+  box-shadow: var(--shadow-raised);
+  /* Above the sticky bulk bar, which would otherwise slide over it. */
+  position: relative;
+  z-index: 10;
+}
+
+.app__nav {
+  border-right: 0;
+}
+
+.navitem {
+  box-shadow: none;
+  transition:
+    background var(--duration-fast) var(--ease-clay),
+    color var(--duration-fast) var(--ease-clay);
+}
+
+.navitem:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.navitem[aria-current='page'] {
+  box-shadow: var(--shadow-raised);
+}
+
+.feature__icon {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pressed);
+}
+
+.status-screen__icon {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pressed);
+}
+
+.badge {
+  border-radius: var(--radius-full);
+}
+
+.landing__foot {
+  border-top: 0;
+}
+
+.skeleton {
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .navitem,
+  .theme-toggle__option {
+    transition: none;
+  }
+
+  button:active:not(:disabled) {
+    transform: none;
+  }
 }

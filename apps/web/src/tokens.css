@@ -1,0 +1,125 @@
+/*
+ * Design tokens — Claymorphism. See design-system/MASTER.md.
+ *
+ * This is the only file allowed to contain raw colour, radius or shadow
+ * values. Everything else references these, so swapping the palette (for
+ * Orbit's, when those tokens surface) is a one-file change.
+ *
+ * Theming has three states. An explicit choice stamps data-theme on the root;
+ * "system" removes it so prefers-color-scheme decides. Every token therefore
+ * needs a definition on bare :root, a dark override guarded against an
+ * explicit light choice, and a data-theme="dark" override so the toggle wins
+ * in both directions.
+ */
+
+:root {
+  /* --- palette ---------------------------------------------------------- */
+  --bg: #f4efe4;
+  --surface: #fbf7ee;
+  --surface-2: #ece5d6;
+  --border: #e0d7c4;
+  --ink: #2b2620;
+  --muted: #6b6357;
+  --accent: #b8801d;
+  --accent-ink: #fffdf8;
+  --ok: #2f7d54;
+  --bad: #b4402f;
+  --bad-ink: #fffdf8;
+  --warn-bg: #f7e9c6;
+  --warn-ink: #6f5210;
+
+  /* --- elevation -------------------------------------------------------- *
+   * Two layers per surface: an outer drop shadow for lift, and an inset
+   * highlight along the top edge that produces the rounded-lip look. One
+   * without the other reads as flat, or as embossed.                        */
+  --shadow-raised:
+    0 6px 14px -6px rgb(80 60 20 / 0.28),
+    0 2px 4px -2px rgb(80 60 20 / 0.18),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.75);
+
+  --shadow-floating:
+    0 24px 48px -18px rgb(60 44 14 / 0.4),
+    0 8px 16px -8px rgb(60 44 14 / 0.24),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.7);
+
+  /* Recessed: inputs and wells, the opposite of a pressable surface. */
+  --shadow-pressed:
+    inset 0 2px 5px -1px rgb(80 60 20 / 0.22),
+    inset 0 -1px 0 0 rgb(255 255 255 / 0.5);
+
+  /* --- shape ------------------------------------------------------------ */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+  --radius-full: 999px;
+
+  /* --- motion ----------------------------------------------------------- */
+  --duration-fast: 120ms;
+  --ease-clay: cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #14120f;
+    --surface: #211d18;
+    --surface-2: #1a1713;
+    --border: #332d25;
+    --ink: #f3eee4;
+    --muted: #a89f92;
+    --accent: #e0a53a;
+    --accent-ink: #241a05;
+    --ok: #6cc294;
+    --bad: #f08b78;
+    --bad-ink: #2a1109;
+    --warn-bg: #3a2f14;
+    --warn-ink: #f0d69a;
+
+    /*
+     * Dark clay cannot lean on white highlights — they read as plastic. The
+     * lift comes from a deeper drop shadow and a much fainter top edge.
+     */
+    --shadow-raised:
+      0 6px 14px -6px rgb(0 0 0 / 0.6),
+      0 2px 4px -2px rgb(0 0 0 / 0.45),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+
+    --shadow-floating:
+      0 24px 48px -18px rgb(0 0 0 / 0.75),
+      0 8px 16px -8px rgb(0 0 0 / 0.5),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.07);
+
+    --shadow-pressed:
+      inset 0 2px 5px -1px rgb(0 0 0 / 0.55),
+      inset 0 -1px 0 0 rgb(255 255 255 / 0.04);
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #14120f;
+  --surface: #211d18;
+  --surface-2: #1a1713;
+  --border: #332d25;
+  --ink: #f3eee4;
+  --muted: #a89f92;
+  --accent: #e0a53a;
+  --accent-ink: #241a05;
+  --ok: #6cc294;
+  --bad: #f08b78;
+  --bad-ink: #2a1109;
+  --warn-bg: #3a2f14;
+  --warn-ink: #f0d69a;
+
+  --shadow-raised:
+    0 6px 14px -6px rgb(0 0 0 / 0.6),
+    0 2px 4px -2px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+
+  --shadow-floating:
+    0 24px 48px -18px rgb(0 0 0 / 0.75),
+    0 8px 16px -8px rgb(0 0 0 / 0.5),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.07);
+
+  --shadow-pressed:
+    inset 0 2px 5px -1px rgb(0 0 0 / 0.55),
+    inset 0 -1px 0 0 rgb(255 255 255 / 0.04);
+}
