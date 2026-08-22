@@ -1,12 +1,19 @@
 /*
- * Placeholder styling only. The real visual language is the Claymorphism token
- * set carried over from Orbit — that lands in Phase 8 (see the roadmap), and
- * these rules are expected to be replaced wholesale rather than extended.
+ * Placeholder styling. The real visual language is the Claymorphism token set
+ * carried over from Orbit — that lands in Phase 8 (see the roadmap), and these
+ * rules are expected to be replaced wholesale rather than extended.
+ *
+ * Theming has three states. An explicit choice stamps data-theme on the root;
+ * "system" removes it so prefers-color-scheme decides. Every colour therefore
+ * needs a definition on bare :root, a dark override guarded against an
+ * explicit light choice, and a data-theme="dark" override so the toggle wins
+ * in both directions.
  */
 
 :root {
   --bg: #faf7f0;
   --surface: #fffdf8;
+  --surface-2: #f5efe3;
   --border: #e8e0d0;
   --ink: #2b2620;
   --muted: #6f675c;
@@ -16,14 +23,13 @@
   --bad: #b4402f;
   --warn-bg: #fdf3d8;
   --warn-ink: #7a5a12;
-
-  color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #171512;
     --surface: #211e1a;
+    --surface-2: #2a2622;
     --border: #35302a;
     --ink: #f3eee4;
     --muted: #a89f92;
@@ -36,6 +42,21 @@
   }
 }
 
+:root[data-theme='dark'] {
+  --bg: #171512;
+  --surface: #211e1a;
+  --surface-2: #2a2622;
+  --border: #35302a;
+  --ink: #f3eee4;
+  --muted: #a89f92;
+  --accent: #e0a53a;
+  --accent-ink: #241a05;
+  --ok: #6cc294;
+  --bad: #f08b78;
+  --warn-bg: #3a2f14;
+  --warn-ink: #f0d69a;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -44,13 +65,25 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Visible to assistive technology, not to sighted users. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .shell {
-  max-width: 46rem;
+  max-width: 52rem;
   margin: 0 auto;
-  padding: 3rem 1.25rem 4rem;
+  padding: 2.5rem 1.25rem 4rem;
 }
 
 .shell--narrow {
@@ -60,6 +93,7 @@ body {
 h1 {
   margin: 0;
   font-size: clamp(1.75rem, 5vw, 2.5rem);
+  line-height: 1.15;
   letter-spacing: -0.02em;
 }
 
@@ -73,19 +107,195 @@ h2 {
   color: var(--muted);
 }
 
+/* ---- theme toggle -------------------------------------------------------- */
+
+.theme-toggle {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.theme-toggle__option {
+  position: relative;
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.theme-toggle__option[data-active='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+/*
+ * The radio covers its whole label, transparent. Hiding it with .sr-only
+ * would work for people and screen readers but makes it unclickable for
+ * anything driving the page programmatically, tests included.
+ */
+.theme-toggle__option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* The input is transparent, so the focus ring has to go on the label. */
+.theme-toggle__option:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 30rem) {
+  /* Icons alone below the point where three labels start wrapping. */
+  .theme-toggle__text {
+    display: none;
+  }
+}
+
+/* ---- landing ------------------------------------------------------------- */
+
+.landing__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+}
+
+.landing__mark {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.landing__bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.hero {
+  padding: 2rem 0 3rem;
+}
+
+.hero__eyebrow {
+  margin: 0 0 0.75rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  max-width: 18ch;
+  font-size: clamp(2rem, 7vw, 3.25rem);
+}
+
+.hero__sub {
+  max-width: 52ch;
+  margin: 1rem 0 1.75rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.features {
+  display: grid;
+  gap: 1rem;
+  /* 18rem is chosen so four cards land as a 2x2 rather than 3 + 1 orphan. */
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  margin-bottom: 2.5rem;
+}
+
+.feature {
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+}
+
+.feature p {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.promise ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.promise strong {
+  color: var(--ink);
+}
+
+.landing__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 2.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- app ----------------------------------------------------------------- */
+
+.login__bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
 .topbar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 2rem;
 }
 
 .topbar__user {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
-  align-items: baseline;
+  align-items: center;
 }
 
 .card {
@@ -123,7 +333,8 @@ input {
 }
 
 input:focus-visible,
-button:focus-visible {
+button:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -154,6 +365,18 @@ button.link {
 
 button.link:hover:not(:disabled) {
   color: var(--ink);
+}
+
+.link-plain {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link-plain:hover {
+  color: var(--ink);
+  text-decoration: underline;
 }
 
 .accounts {
@@ -210,4 +433,76 @@ button.link:hover:not(:disabled) {
 .bad {
   margin: 1rem 0 0;
   color: var(--bad);
+}
+
+/* ---- icons --------------------------------------------------------------- */
+
+/*
+ * Icons sit on the text baseline and inherit colour, so a heading, a button
+ * and a badge each get an icon that matches their own size and weight without
+ * per-context overrides.
+ */
+svg {
+  flex-shrink: 0;
+}
+
+.brand,
+h2,
+.landing__mark,
+.notice,
+.badge,
+.link-plain {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+h2 svg,
+.landing__mark svg {
+  color: var(--accent);
+}
+
+.brand {
+  gap: 0.6rem;
+}
+
+.brand svg {
+  color: var(--accent);
+}
+
+/* Buttons that pair an icon with a label. */
+.icon-btn {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.badge {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.notice {
+  align-items: flex-start;
+}
+
+.notice svg {
+  margin-top: 0.2rem;
+}
+
+.feature__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.6rem;
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* The features grid puts the icon above the heading, not beside it. */
+.feature h2 {
+  display: block;
 }

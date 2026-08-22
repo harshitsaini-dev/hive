@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type User } from './api.js'
+import {
+  AlertIcon,
+  CheckIcon,
+  HiveMark,
+  LogoutIcon,
+  MailIcon,
+  PlusIcon,
+  TrashIcon,
+} from './Icons.js'
+import { ThemeToggle } from './ThemeToggle.js'
 
 type Load =
   | { state: 'loading' }
@@ -105,29 +115,48 @@ export function AccountsPage({
   return (
     <main className="shell">
       <header className="topbar">
-        <h1>Hive</h1>
+        <h1 className="brand">
+          <HiveMark size={26} />
+          Hive
+        </h1>
         <div className="topbar__user">
+          <ThemeToggle />
           <span className="hint">{user.email}</span>
           <button
             type="button"
-            className="link"
+            className="link icon-btn"
             onClick={() => {
               void api.logout().finally(onSignedOut)
             }}
           >
+            <LogoutIcon size={15} />
             Sign out
           </button>
         </div>
       </header>
 
       <div role="status" aria-live="polite">
-        {outcome && <p className="notice">{outcome}</p>}
+        {outcome && (
+          <p className="notice">
+            <CheckIcon size={16} />
+            {outcome}
+          </p>
+        )}
       </div>
 
       <section className="card">
         <div className="card__head">
-          <h2>Connected accounts</h2>
-          <button type="button" onClick={connect} disabled={connecting}>
+          <h2>
+            <MailIcon size={17} />
+            Connected accounts
+          </h2>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={connect}
+            disabled={connecting}
+          >
+            <PlusIcon size={16} />
             {connecting ? 'Opening Google…' : 'Connect Gmail'}
           </button>
         </div>
@@ -150,15 +179,17 @@ export function AccountsPage({
                   <strong>{account.gmailAddress}</strong>
                   {account.status === 'reauth_required' && (
                     <span className="badge badge--warn">
+                      <AlertIcon size={13} />
                       Needs reconnecting
                     </span>
                   )}
                 </div>
                 <button
                   type="button"
-                  className="link"
+                  className="link icon-btn"
                   onClick={() => void disconnect(account)}
                 >
+                  <TrashIcon size={15} />
                   Disconnect
                 </button>
               </li>

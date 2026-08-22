@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type User } from './api.js'
+import { LandingPage } from './LandingPage.js'
 import { LoginPage } from './LoginPage.js'
 import { AccountsPage } from './AccountsPage.js'
 
@@ -11,7 +12,16 @@ type Auth =
 export function App() {
   const [auth, setAuth] = useState<Auth>({ state: 'checking' })
 
-  // One call on mount decides which page to show. Rendering the login form
+  /**
+   * Signed-out visitors see the landing page first. `?signin` sends them
+   * straight to the form instead — which is also where the OAuth callback
+   * bounces anyone whose session expired mid-connect.
+   */
+  const [wantsSignIn, setWantsSignIn] = useState(
+    () => new URLSearchParams(window.location.search).has('signin'),
+  )
+
+  // One call on mount decides which page to show. Rendering the landing page
   // first and swapping it out would flash the wrong screen at every signed-in
   // user on every refresh.
   useEffect(() => {
@@ -42,15 +52,23 @@ export function App() {
   }
 
   if (auth.state === 'anonymous') {
-    return (
-      <LoginPage onSignedIn={(user) => setAuth({ state: 'signed-in', user })} />
+    return wantsSignIn ? (
+      <LoginPage
+        onSignedIn={(user) => setAuth({ state: 'signed-in', user })}
+        onBack={() => setWantsSignIn(false)}
+      />
+    ) : (
+      <LandingPage onGetStarted={() => setWantsSignIn(true)} />
     )
   }
 
   return (
     <AccountsPage
       user={auth.user}
-      onSignedOut={() => setAuth({ state: 'anonymous' })}
+      onSignedOut={() => {
+        setWantsSignIn(false)
+        setAuth({ state: 'anonymous' })
+      }}
     />
   )
 }

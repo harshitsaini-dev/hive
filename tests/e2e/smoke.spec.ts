@@ -27,10 +27,11 @@ test.describe('application boots', () => {
 
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { name: 'Hive', level: 1 })).toBeVisible()
-    // An anonymous visitor gets the login form, not a loading state stuck
-    // forever — which is what a genuinely failing /auth/me would look like.
-    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+    // An anonymous visitor lands on the marketing page, not a loading state
+    // stuck forever — which is what a genuinely failing /auth/me looks like.
+    await expect(
+      page.getByRole('heading', { name: /Manage several Gmail accounts/ }),
+    ).toBeVisible()
 
     expect(consoleErrors).toEqual([])
   })

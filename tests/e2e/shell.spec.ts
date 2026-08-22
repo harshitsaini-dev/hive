@@ -8,7 +8,8 @@ import { expect, test } from '@playwright/test'
  */
 test.describe('login page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
+    // ?signin skips the landing page and goes straight to the form.
+    await page.goto('/?signin')
   })
 
   test('offers a passwordless sign-in form', async ({ page }) => {
@@ -75,10 +76,13 @@ test.describe('login page', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
     await expect(page.getByRole('main')).toBeVisible()
 
-    // Tab reaches the email field, and typing plus Enter submits the form —
-    // no mouse involved anywhere in the primary path.
-    await page.keyboard.press('Tab')
-    await expect(page.getByLabel('Email address')).toBeFocused()
+    // Tab reaches the email field past the back link and theme controls, and
+    // typing plus Enter submits — no mouse anywhere in the primary path.
+    const email = page.getByLabel('Email address')
+    for (let i = 0; i < 8 && !(await email.evaluate((el) => el === document.activeElement)); i++) {
+      await page.keyboard.press('Tab')
+    }
+    await expect(email).toBeFocused()
 
     await page.keyboard.type('keyboard@example.test')
     await page.keyboard.press('Enter')
@@ -91,7 +95,7 @@ test.describe('signed in', () => {
   test('a full login lands on the accounts page', async ({ page, request }) => {
     const email = `ui-login-${Date.now()}@example.test`
 
-    await page.goto('/')
+    await page.goto('/?signin')
     await page.getByLabel('Email address').fill(email)
     await page.getByRole('button', { name: 'Send me a code' }).click()
 
@@ -119,6 +123,8 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Sign out' }).click()
-    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: /Manage several Gmail accounts/ }),
+    ).toBeVisible()
   })
 })

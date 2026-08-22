@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api, ApiRequestError, type User } from './api.js'
+import { ArrowLeftIcon, HiveMark, MailIcon } from './Icons.js'
+import { ThemeToggle } from './ThemeToggle.js'
 
 type Stage = 'email' | 'code'
 
@@ -8,7 +10,13 @@ type Stage = 'email' | 'code'
  * visible and offers a way back, because mistyping the address is the most
  * likely reason a code never arrives.
  */
-export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) {
+export function LoginPage({
+  onSignedIn,
+  onBack,
+}: {
+  onSignedIn: (user: User) => void
+  onBack: () => void
+}) {
   const [stage, setStage] = useState<Stage>('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -57,7 +65,18 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) 
 
   return (
     <main className="shell shell--narrow">
-      <h1>Hive</h1>
+      <div className="login__bar">
+        <button type="button" className="link icon-btn" onClick={onBack}>
+          <ArrowLeftIcon size={15} />
+          Back
+        </button>
+        <ThemeToggle />
+      </div>
+
+      <h1 className="brand">
+        <HiveMark size={28} />
+        Hive
+      </h1>
       <p className="tagline">Manage several Gmail accounts from one place.</p>
 
       {stage === 'email' ? (
@@ -86,7 +105,10 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) 
         </form>
       ) : (
         <form onSubmit={submitCode} className="card" noValidate>
-          <h2>Enter your code</h2>
+          <h2>
+            <MailIcon size={17} />
+            Enter your code
+          </h2>
 
           {notice && <p className="hint">{notice}</p>}
 
