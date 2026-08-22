@@ -4,10 +4,12 @@ Manage several Gmail accounts from one place. Search across all of them at
 once, bulk-clean the clutter, and send from whichever identity you need —
 without juggling browser tabs and profile switchers.
 
-Open source under MIT. Hosted at [hive.harshitsaini.in](https://hive.harshitsaini.in),
-and self-hostable if you would rather run your own.
+Open source under MIT, and self-hostable if you would rather run your own.
 
-> **Status: early development.** Phase 0 of the roadmap. Not usable yet.
+> **Status: early development.** Not usable yet — there is no login, no Gmail
+> connection, and nothing to try. A hosted instance will go up at
+> `hive.harshitsaini.in` once it is worth using; until then the only way to
+> run it is locally.
 
 ## What it does
 
