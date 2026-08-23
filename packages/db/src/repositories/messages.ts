@@ -282,3 +282,151 @@ export async function updateSyncState(
     args,
   })
 }
+
+/* ---- searching the index ------------------------------------------------- */
+
+/**
+ * The structural half of a mailbox search.
+ *
+ * Deliberately *not* free text. The index holds sender, subject and Gmail's
+ * short snippet — not the body — so a term appearing only in the body of a
+ * message would be missed. Silently returning fewer results is the exact
+ * class of bug that has bitten this project twice already, so a text search
+ * still goes to Gmail and only these structural filters are answered locally.
+ */
+export interface IndexQuery {
+  accountId: string
+  /** 'inbox' | 'sent' | 'trash' | 'all' — 'all' still excludes spam. */
+  folder: 'inbox' | 'sent' | 'trash' | 'all'
+  from?: string
+  /** Inclusive, `YYYY-MM-DD`. */
+  after?: string
+  /** Exclusive, `YYYY-MM-DD`. */
+  before?: string
+  /** Messages older than this many days. */
+  olderThanDays?: number
+  category?: string
+  hasAttachment?: boolean
+  unreadOnly?: boolean
+}
+
+export interface IndexedRow {
+  gmail_message_id: string
+  thread_id: string
+  from_addr: string
+  subject: string
+  snippet: string
+  labels_json: string
+  received_at: string
+}
+
+/**
+ * Builds the WHERE clause shared by the page query and the count.
+ *
+ * Labels are matched with `LIKE` against the stored JSON array. Crude, and
+ * correct here because Gmail's label ids have no substring collisions —
+ * `"INBOX"` with its quotes cannot match inside `"CATEGORY_PROMOTIONS"`. A
+ * proper join table would be the answer if labels ever needed real querying.
+ */
+function buildWhere(query: IndexQuery): {
+  sql: string
+  args: (string | number)[]
+} {
+  const clauses = ['account_id = ?']
+  const args: (string | number)[] = [query.accountId]
+
+  if (query.folder === 'trash') {
+    clauses.push(`labels_json LIKE '%"TRASH"%'`)
+  } else {
+    // Everything outside the bin, plus spam excluded — the default a search
+    // gets in Gmail itself.
+    clauses.push(`labels_json NOT LIKE '%"TRASH"%'`)
+    clauses.push(`labels_json NOT LIKE '%"SPAM"%'`)
+
+    if (query.folder === 'inbox') clauses.push(`labels_json LIKE '%"INBOX"%'`)
+    if (query.folder === 'sent') clauses.push(`labels_json LIKE '%"SENT"%'`)
+  }
+
+  if (query.from) {
+    clauses.push('from_addr LIKE ?')
+    args.push(`%${query.from}%`)
+  }
+  if (query.after) {
+    clauses.push('received_at >= ?')
+    args.push(query.after)
+  }
+  if (query.before) {
+    clauses.push('received_at < ?')
+    args.push(query.before)
+  }
+  if (query.olderThanDays) {
+    clauses.push(`received_at < datetime('now', ?)`)
+    args.push(`-${query.olderThanDays} days`)
+  }
+  if (query.category) {
+    clauses.push('labels_json LIKE ?')
+    args.push(`%"CATEGORY_${query.category.toUpperCase()}"%`)
+  }
+  if (query.hasAttachment) clauses.push('has_attachment = 1')
+  if (query.unreadOnly) clauses.push(`labels_json LIKE '%"UNREAD"%'`)
+
+  return { sql: clauses.join(' AND '), args }
+}
+
+/**
+ * One page of results, newest first.
+ *
+ * Offset paging rather than a cursor. The rows are ordered by a column that
+ * does not change, and a mailbox does not reshuffle underneath a reader the
+ * way an activity feed does — so the failure mode offset paging is famous for
+ * does not really arise here, and it buys a page number the caller can jump
+ * to rather than a token it has to walk.
+ */
+export async function searchIndex(
+  query: IndexQuery,
+  options: { limit: number; offset: number },
+): Promise<IndexedRow[]> {
+  const where = buildWhere(query)
+
+  const result = await db().execute({
+    sql: `SELECT gmail_message_id, thread_id, from_addr, subject, snippet,
+                 labels_json, received_at
+          FROM message_index
+          WHERE ${where.sql}
+          ORDER BY received_at DESC
+          LIMIT ? OFFSET ?`,
+    args: [...where.args, options.limit, options.offset],
+  })
+
+  return result.rows as unknown as IndexedRow[]
+}
+
+/** The real total for the same query — the number the page is a slice of. */
+export async function countIndexMatches(query: IndexQuery): Promise<number> {
+  const where = buildWhere(query)
+
+  const result = await db().execute({
+    sql: `SELECT COUNT(*) AS n FROM message_index WHERE ${where.sql}`,
+    args: where.args,
+  })
+
+  return Number(result.rows[0]?.n ?? 0)
+}
+
+/** Every matching id, for a bulk action resolved locally. */
+export async function idsFromIndex(
+  query: IndexQuery,
+  limit: number,
+): Promise<string[]> {
+  const where = buildWhere(query)
+
+  const result = await db().execute({
+    sql: `SELECT gmail_message_id FROM message_index
+          WHERE ${where.sql}
+          ORDER BY received_at DESC
+          LIMIT ?`,
+    args: [...where.args, limit],
+  })
+
+  return result.rows.map((row) => String(row.gmail_message_id))
+}

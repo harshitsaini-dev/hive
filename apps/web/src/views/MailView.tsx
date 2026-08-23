@@ -14,6 +14,7 @@ import {
   EMPTY_FILTERS,
   hasAnyFilter,
   MailFilters,
+  toStructured,
   type Filters,
 } from '../MailFilters.js'
 import { AnalyticsPanel } from '../AnalyticsPanel.js'
@@ -35,6 +36,10 @@ interface Load {
   messages: MessageRow[]
   error: string | null
   nextPageToken: string | null
+  /** Offset paging, when the local index answered instead of Gmail. */
+  nextOffset: number | null
+  /** The real number this page is a slice of, when it is known. */
+  total: number | null
   /** Per-account failures — one broken mailbox must not hide the others. */
   problems: { gmailAddress: string; reason: string }[]
 }
@@ -44,6 +49,8 @@ const EMPTY_LOAD: Load = {
   messages: [],
   error: null,
   nextPageToken: null,
+  nextOffset: null,
+  total: null,
   problems: [],
 }
 
@@ -155,6 +162,22 @@ export function MailView({
     [scope, applied],
   )
 
+  /*
+   * The same filters in the shape the local index understands, or null when
+   * they cannot be answered locally. The server decides which it can honour
+   * and falls back to Gmail silently — this only offers it the choice.
+   */
+  const structuredJson = useMemo(
+    () =>
+      JSON.stringify(
+        toStructured(
+          applied,
+          spansAll ? 'all' : mode === 'trash' ? 'trash' : mode,
+        ),
+      ),
+    [applied, spansAll, mode],
+  )
+
   const refresh = useCallback(async () => {
     if (accountsLoading) return
 
@@ -170,12 +193,15 @@ export function MailView({
         q: query,
         accountId: accountId || undefined,
         pageSize: PAGE_SIZE,
+        structured: JSON.parse(structuredJson) ?? undefined,
       })
 
       setLoad({
         loading: false,
         messages: result.messages,
         nextPageToken: result.nextPageToken,
+        nextOffset: result.nextOffset ?? null,
+        total: result.total ?? null,
         error: null,
         problems: [
           ...result.accounts
@@ -198,7 +224,7 @@ export function MailView({
           caught instanceof ApiRequestError ? caught.message : 'Could not search.',
       })
     }
-  }, [query, accountId, accountsLoading])
+  }, [query, accountId, accountsLoading, structuredJson])
 
   useEffect(() => {
     void refresh()
@@ -206,7 +232,9 @@ export function MailView({
 
   /** Appends the next page rather than replacing — selections survive. */
   const loadMore = useCallback(async () => {
-    if (!load.nextPageToken) return
+    // Two ways to page, because there are two answerers. Gmail hands back a
+    // cursor per mailbox; the index counts rows and takes an offset.
+    if (load.nextPageToken === null && load.nextOffset === null) return
 
     setLoadingMore(true)
     try {
@@ -214,7 +242,10 @@ export function MailView({
         q: query,
         accountId: accountId || undefined,
         pageSize: PAGE_SIZE,
-        pageToken: load.nextPageToken,
+        structured: JSON.parse(structuredJson) ?? undefined,
+        ...(load.nextOffset !== null
+          ? { offset: load.nextOffset }
+          : { pageToken: load.nextPageToken ?? undefined }),
       })
 
       setPaged(true)
@@ -237,6 +268,8 @@ export function MailView({
           messages: [...previous.messages, ...fresh],
           // Nothing new means the cursor is going in circles; stop.
           nextPageToken: fresh.length === 0 ? null : result.nextPageToken,
+          nextOffset: fresh.length === 0 ? null : (result.nextOffset ?? null),
+          total: result.total ?? previous.total,
         }
       })
     } catch (caught) {
@@ -248,7 +281,7 @@ export function MailView({
     } finally {
       setLoadingMore(false)
     }
-  }, [load.nextPageToken, query, accountId])
+  }, [load.nextPageToken, load.nextOffset, query, accountId, structuredJson])
 
   /*
    * The real total, fetched alongside the pages rather than after them. Only
@@ -256,6 +289,9 @@ export function MailView({
    * already is the answer.
    */
   useEffect(() => {
+    // The index reports a real total with the page. Only Gmail-served
+    // searches need the extra resolve, which is what this ever existed for.
+    if (load.total !== null) return
     if (load.loading || !load.nextPageToken || total) return
 
     let cancelled = false
@@ -279,7 +315,7 @@ export function MailView({
     return () => {
       cancelled = true
     }
-  }, [load.loading, load.nextPageToken, total, query, accountId, accounts])
+  }, [load.loading, load.nextPageToken, load.total, total, query, accountId, accounts])
 
   const selectedRows = load.messages.filter((message) =>
     selected.has(message.gmailMessageId),
@@ -680,7 +716,11 @@ export function MailView({
               />
               Select page
               <span className="hint">
-                ({load.messages.length.toLocaleString()} shown)
+                ({load.messages.length.toLocaleString()} shown
+                {load.total !== null && load.total > load.messages.length
+                  ? ` of ${load.total.toLocaleString()}`
+                  : ''}
+                )
               </span>
             </label>
 
@@ -768,7 +808,7 @@ export function MailView({
             })}
           </ul>
 
-          {load.nextPageToken && (
+          {(load.nextPageToken !== null || load.nextOffset !== null) && (
             <div className="loadmore">
               {/*
                 Pagination stays manual. Every message on a page costs a
@@ -779,11 +819,13 @@ export function MailView({
                 only about how much of the answer is drawn at once.
               */}
               <span className="hint">
-                {total
-                  ? `Showing ${load.messages.length.toLocaleString()} of ${total.count.toLocaleString()}${
-                      total.truncated ? '+' : ''
-                    } matches`
-                  : `Showing ${load.messages.length.toLocaleString()} so far`}
+                {load.total !== null
+                  ? `Showing ${load.messages.length.toLocaleString()} of ${load.total.toLocaleString()} matches`
+                  : total
+                    ? `Showing ${load.messages.length.toLocaleString()} of ${total.count.toLocaleString()}${
+                        total.truncated ? '+' : ''
+                      } matches`
+                    : `Showing ${load.messages.length.toLocaleString()} so far`}
               </span>
               <button
                 type="button"
@@ -801,7 +843,7 @@ export function MailView({
             simply stops. A count that ends is the difference between "that is
             all of them" and "that is all it bothered to fetch".
           */}
-          {!load.nextPageToken && paged && (
+          {load.nextPageToken === null && load.nextOffset === null && paged && (
             <p className="hint loadmore">
               All {load.messages.length.toLocaleString()} matches loaded.
             </p>

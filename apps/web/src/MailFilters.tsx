@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { StructuredSearch } from './api.js'
 import { DatePicker } from './DatePicker.js'
 import { SearchIcon } from './Icons.js'
 import { Select } from './Select.js'
@@ -98,6 +99,53 @@ export function buildQuery(filters: Filters): string {
   if (raw) parts.push(raw)
 
   return parts.join(' ')
+}
+
+const OLDER_DAYS: Record<string, number> = {
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
+  '1y': 365,
+}
+
+/**
+ * The same filters, in the shape the local index can query.
+ *
+ * Returns null when the query cannot be answered locally, which means free
+ * text or raw Gmail syntax. Gmail searches message bodies; the index holds
+ * sender, subject and a snippet, because storing bodies is what the privacy
+ * policy forbids. A text search that quietly stopped matching words inside
+ * messages would be a worse product wearing a faster one's clothes.
+ */
+export function toStructured(
+  filters: Filters,
+  folder: 'inbox' | 'sent' | 'trash' | 'all',
+): StructuredSearch | null {
+  if (filters.text.trim() || filters.raw.trim()) return null
+
+  return {
+    folder,
+    ...(filters.from.trim() ? { from: filters.from.trim() } : {}),
+    ...(filters.after ? { after: filters.after } : {}),
+    // Exclusive on the server, and the field means an inclusive day — the
+    // same correction `buildQuery` makes for Gmail's `before:`.
+    ...(filters.before ? { before: nextDayIso(filters.before) } : {}),
+    ...(filters.olderThan
+      ? { olderThanDays: OLDER_DAYS[filters.olderThan] }
+      : {}),
+    ...(filters.category ? { category: filters.category } : {}),
+    ...(filters.hasAttachment ? { hasAttachment: true } : {}),
+    ...(filters.unreadOnly ? { unreadOnly: true } : {}),
+  }
+}
+
+/** `2026-01-31` -> `2026-02-01`, keeping an inclusive end date inclusive. */
+function nextDayIso(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return isoDate
+
+  date.setUTCDate(date.getUTCDate() + 1)
+  return date.toISOString().slice(0, 10)
 }
 
 const OLDER_THAN = [

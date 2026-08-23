@@ -121,6 +121,60 @@ export async function syncAccount(
   }
 }
 
+/**
+ * Brings an indexed mailbox up to the minute, cheaply, before it is read.
+ *
+ * The sweep runs hourly, which is fine for an analysis and not fine for an
+ * inbox: a message that arrived four minutes ago has to be there. One
+ * `history.list` call usually covers it, so serving a search from the index
+ * costs one request rather than the five hundred a page of metadata does.
+ *
+ * Returns false when the index cannot answer — not backfilled, paused, or the
+ * catch-up failed — and the caller should go to Gmail instead. Failing over
+ * is always safe; the wrong answer is not.
+ */
+export async function freshenIndex(
+  ownerId: string,
+  account: AccountRow,
+): Promise<boolean> {
+  const state = await getSyncState(account.id)
+  if (!state || state.backfill_done !== 1 || state.paused === 1) return false
+
+  // Recently caught up. Re-asking on every keystroke would spend a request
+  // per search for an answer that cannot have changed.
+  if (state.last_synced_at) {
+    const age = Date.now() - new Date(`${state.last_synced_at}Z`).getTime()
+    if (Number.isFinite(age) && age < 60_000) return true
+  }
+
+  try {
+    await withGmail(ownerId, account.id, async (session) => {
+      if (!state.history_id) {
+        await updateSyncState(account.id, {
+          historyId: (await getProfile(session.accessToken)).historyId,
+        })
+        return
+      }
+
+      const outcome = await incremental(
+        account.id,
+        session.accessToken,
+        state.history_id,
+      )
+
+      // The cursor expired and the index was thrown away; it cannot answer
+      // anything until the backfill has run again.
+      if (outcome.reindexed) throw new Error('index is rebuilding')
+    })
+
+    await updateSyncState(account.id, { touchSynced: true, lastError: null })
+    return true
+  } catch (error) {
+    console.warn(`could not freshen index for ${account.id}:`, error)
+    return false
+  }
+}
+
 async function backfill(
   accountId: string,
   accessToken: string,

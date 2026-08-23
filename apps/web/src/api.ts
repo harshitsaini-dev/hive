@@ -56,8 +56,33 @@ export interface MessageRow {
   receivedAt: string
 }
 
+/**
+ * The structural half of a search, for the local index.
+ *
+ * No free text on purpose: Gmail searches message bodies and the index does
+ * not hold them, so a text query always goes to Gmail.
+ */
+export interface StructuredSearch {
+  folder: 'inbox' | 'sent' | 'trash' | 'all'
+  from?: string
+  after?: string
+  before?: string
+  olderThanDays?: number
+  category?: string
+  hasAttachment?: boolean
+  unreadOnly?: boolean
+}
+
 export interface SearchResult {
   messages: MessageRow[]
+  /** Which side answered. Only ever affects what the UI can claim, not what
+   *  it shows. */
+  source?: 'index' | 'gmail'
+  /** The real number this page is a slice of. Null when Gmail answered — it
+   *  cannot produce one without a second, separate query. */
+  total?: number | null
+  /** Offset paging, when the index answered. Null at the end. */
+  nextOffset?: number | null
   /** Opaque; hand it straight back to fetch the next page. Null at the end. */
   nextPageToken: string | null
   /** Per-account outcome, so one failing mailbox can be named rather than
@@ -198,12 +223,28 @@ export const api = {
     accountId?: string
     pageSize?: number
     pageToken?: string
+    /**
+     * The same filters, structurally, so the server can answer from its local
+     * index instead of asking Gmail about every message on the page.
+     *
+     * Sent alongside `q`, never instead of it: the server decides which it
+     * can honour exactly, and falls back without the client knowing. Free
+     * text is deliberately not part of this shape — Gmail searches message
+     * bodies and the index has none to search.
+     */
+    structured?: StructuredSearch
+    /** Index-served paging. Cursor paging still uses `pageToken`. */
+    offset?: number
   }) => {
     const params = new URLSearchParams()
     if (options.q) params.set('q', options.q)
     if (options.accountId) params.set('accountId', options.accountId)
     if (options.pageSize) params.set('pageSize', String(options.pageSize))
     if (options.pageToken) params.set('pageToken', options.pageToken)
+    if (options.offset) params.set('offset', String(options.offset))
+    if (options.structured) {
+      params.set('structured', JSON.stringify(options.structured))
+    }
     return request<SearchResult>(`/messages?${params.toString()}`)
   },
 

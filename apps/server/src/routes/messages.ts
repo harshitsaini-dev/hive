@@ -1,9 +1,12 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import {
+  countIndexMatches,
   findAnalysisRun,
   listAccountsForOwner,
+  searchIndex,
   writeAuditEntry,
+  type AccountRow,
 } from '@hive/db'
 import {
   buildRawMessage,
@@ -24,6 +27,7 @@ import {
 } from '@hive/gmail-client'
 import { asyncRoute, badRequest, HttpError, notFound } from '../errors.js'
 import { MAX_SCAN, runAnalysis } from '../analysis.js'
+import { freshenIndex } from '../sync.js'
 import {
   advanceJob,
   createJob,
@@ -136,9 +140,37 @@ const MAX_BULK = 10_000
  */
 const MAX_PAGE_SIZE = 500
 
+/**
+ * The structural filters behind `q`, when the client has them.
+ *
+ * Sent alongside the Gmail query rather than instead of it, so the server can
+ * answer from the local index when it is able to and fall back to Gmail
+ * without the client knowing or caring which happened.
+ *
+ * **Free text is deliberately absent.** Gmail searches message bodies; the
+ * index holds sender, subject and a short snippet, because storing bodies is
+ * exactly what the privacy policy forbids. A text search that quietly stopped
+ * matching words inside messages would be a worse product wearing a faster
+ * one's clothes — so any query with text in it goes to Gmail, every time.
+ */
+const structuredSchema = z.object({
+  folder: z.enum(['inbox', 'sent', 'trash', 'all']),
+  from: z.string().max(200).optional(),
+  after: z.string().max(20).optional(),
+  before: z.string().max(20).optional(),
+  olderThanDays: z.coerce.number().int().min(1).max(3650).optional(),
+  category: z.string().max(40).optional(),
+  hasAttachment: z.coerce.boolean().optional(),
+  unreadOnly: z.coerce.boolean().optional(),
+})
+
 const searchSchema = z.object({
   accountId: z.string().min(1).optional(),
   q: z.string().max(500).optional(),
+  /** JSON, because this arrives on a GET. Absent means "use Gmail". */
+  structured: z.string().max(1000).optional(),
+  /** Zero-based, for index-served pages. Gmail paging still uses a cursor. */
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
   pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(100),
   /**
    * Cursor for the next page.
@@ -190,6 +222,106 @@ const bulkQuerySchema = z.object({
   query: z.string().min(1).max(500),
 })
 
+/** Parses the structured filters, treating anything malformed as absent. */
+function parseStructured(raw: string | undefined): IndexQueryShape | null {
+  if (!raw) return null
+
+  try {
+    const parsed = structuredSchema.safeParse(JSON.parse(raw))
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+type IndexQueryShape = z.infer<typeof structuredSchema>
+
+/**
+ * Answers a search from the local index, or returns null to fall back.
+ *
+ * Null on any doubt at all — an account not yet backfilled, indexing paused,
+ * a catch-up that failed. Falling back to Gmail costs a few seconds; serving
+ * a page that is quietly missing the last hour of mail costs trust, and this
+ * project has already learned that lesson twice.
+ */
+async function searchFromIndex(
+  ownerId: string,
+  accounts: AccountRow[],
+  wanted: IndexQueryShape,
+  page: { limit: number; offset: number },
+) {
+  const fresh = await Promise.all(
+    accounts.map((account) => freshenIndex(ownerId, account)),
+  )
+  if (fresh.some((ok) => !ok)) return null
+
+  const perAccount = await Promise.all(
+    accounts.map(async (account) => {
+      const query = { ...wanted, accountId: account.id }
+
+      /*
+       * Each account is asked for a whole page and the results are merged and
+       * re-cut. Wasteful in rows and correct in ordering: asking each for a
+       * share would drop older messages from a busy mailbox in favour of
+       * newer ones from a quiet one, which is not what "newest first across
+       * everything" means.
+       */
+      const [rows, total] = await Promise.all([
+        searchIndex(query, { limit: page.limit + page.offset, offset: 0 }),
+        countIndexMatches(query),
+      ])
+
+      return {
+        accountId: account.id,
+        gmailAddress: account.gmail_address,
+        total,
+        rows,
+      }
+    }),
+  )
+
+  const merged = perAccount
+    .flatMap((entry) =>
+      entry.rows.map((row) => ({
+        gmailMessageId: row.gmail_message_id,
+        threadId: row.thread_id,
+        accountId: entry.accountId,
+        gmailAddress: entry.gmailAddress,
+        from: row.from_addr,
+        subject: row.subject,
+        snippet: row.snippet,
+        labels: safeParse<string[]>(row.labels_json, []),
+        receivedAt: row.received_at,
+      })),
+    )
+    .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+
+  const total = perAccount.reduce((sum, entry) => sum + entry.total, 0)
+  const slice = merged.slice(page.offset, page.offset + page.limit)
+
+  return {
+    source: 'index' as const,
+    /*
+     * The real total, which the Gmail path cannot cheaply produce. It is the
+     * number a page is a slice *of* — showing "500 loaded" as though it were
+     * the answer is the bug this replaces.
+     */
+    total,
+    messages: slice,
+    nextPageToken: null,
+    /** Present so the client can page without a cursor. */
+    nextOffset: page.offset + slice.length < total
+      ? page.offset + slice.length
+      : null,
+    accounts: perAccount.map((entry) => ({
+      accountId: entry.accountId,
+      gmailAddress: entry.gmailAddress,
+      error: null as string | null,
+    })),
+    skipped: [] as { accountId: string; gmailAddress: string; reason: string }[],
+  }
+}
+
 /**
  * GET /messages — search one account, or all of them at once.
  *
@@ -204,7 +336,7 @@ messagesRouter.get(
     if (!parsed.success) throw badRequest('Invalid search')
 
     const { user } = authed(req)
-    const { accountId, q, pageSize, pageToken } = parsed.data
+    const { accountId, q, structured, offset, pageSize, pageToken } = parsed.data
 
     const accounts = await listAccountsForOwner(user.id)
     const targets = accountId
@@ -216,6 +348,27 @@ messagesRouter.get(
     // Accounts needing reconnection are skipped rather than failing the whole
     // search — one stale account must not hide the others' results.
     const usable = targets.filter((account) => account.status === 'active')
+
+    /*
+     * The local index first, when it can answer this exactly.
+     *
+     * A page of 500 from Gmail is 500 metadata reads; from here it is one
+     * query. The bar for using it is that the answer must be identical, which
+     * is why free text disqualifies: the index has no message bodies to
+     * search. `freshenIndex` costs one history call and closes the gap
+     * between the hourly sweep and now.
+     */
+    const wanted = parseStructured(structured)
+    if (wanted && usable.length > 0) {
+      const served = await searchFromIndex(user.id, usable, wanted, {
+        limit: pageSize,
+        offset,
+      })
+      if (served) {
+        res.json(served)
+        return
+      }
+    }
 
     const cursors = decodeCursors(pageToken)
 
@@ -287,6 +440,8 @@ messagesRouter.get(
     }
 
     res.json({
+      source: 'gmail' as const,
+      total: null,
       messages: merged,
       // One opaque string the client hands straight back. Null means the end.
       nextPageToken: encodeCursors(nextCursors),
