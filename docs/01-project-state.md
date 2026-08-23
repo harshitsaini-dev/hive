@@ -66,12 +66,16 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
 ## Live
 
 - **App:** https://hive.harshitsaini.in (Vercel)
-- **API:** https://hive-api-s1u3.onrender.com (Render), proxied at - **Database:** Turso, ap-south-1
-- **Login email:** Resend, from 
+- **API:** https://hive-api-s1u3.onrender.com (Render), proxied at `/api`
+- **Database:** Turso, ap-south-1
+- **Login email:** Resend, from `Bee <no-reply@bee.harshitsaini.in>`
+
 Verified end to end on 2026-08-23: landing, privacy, terms, API proxy,
 database readiness, security headers, and a real login code delivered.
 
- runs browser smoke tests against the deployed site.
+`npm run test:live` runs browser smoke tests against the deployed site.
+Two pingers keep the Render instance awake so scheduled cleanup rules actually
+fire — see `docs/04-deployment.md`.
 
 ## Next up
 
@@ -80,5 +84,5 @@ database readiness, security headers, and a real login code delivered.
    100 users, until then.
 2. **Bulk-trash progress** over the WebSocket — note the Vercel rewrite does
    not carry WebSockets, so this needs a direct connection to Render.
-3. **The sync engine** that fills , once search volume makes
+3. **The sync engine** that fills `message_index`, once search volume makes
    going to Gmail every time feel slow.
