@@ -91,11 +91,14 @@ export function MailFilters({
   onChange,
   onApply,
   onClear,
+  submitLabel = 'Search',
 }: {
   filters: Filters
   onChange: (filters: Filters) => void
   onApply: () => void
   onClear: () => void
+  /** The same controls serve searching and rule-building; only the verb differs. */
+  submitLabel?: string
 }) {
   const [showRaw, setShowRaw] = useState(filters.raw !== '')
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) =>
@@ -126,7 +129,7 @@ export function MailFilters({
           />
         </div>
 
-        <button type="submit">Search</button>
+        <button type="submit">{submitLabel}</button>
       </div>
 
       <div className="filters__row">
@@ -197,14 +200,14 @@ export function MailFilters({
 
         <button
           type="button"
-          className="link"
+          className="link link--inline"
           onClick={() => setShowRaw(!showRaw)}
         >
           {showRaw ? 'Hide Gmail syntax' : 'Use Gmail syntax'}
         </button>
 
         {hasAnyFilter(filters) && (
-          <button type="button" className="link" onClick={onClear}>
+          <button type="button" className="link link--inline" onClick={onClear}>
             Clear filters
           </button>
         )}

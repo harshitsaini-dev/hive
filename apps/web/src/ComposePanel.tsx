@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from './api.js'
-import { SendIcon } from './Icons.js'
+import { PaperclipIcon, SendIcon } from './Icons.js'
 
 /**
  * Gmail refuses anything over 25 MB, and base64 inflates bytes by about a
@@ -37,7 +37,6 @@ function readAsBase64(file: File): Promise<string> {
 }
 
 export function ComposePanel({ accounts }: { accounts: ConnectedAccount[] }) {
-  const [open, setOpen] = useState(false)
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
@@ -105,7 +104,6 @@ export function ComposePanel({ accounts }: { accounts: ConnectedAccount[] }) {
       setSubject('')
       setBody('')
       setFiles([])
-      setOpen(false)
     } catch (caught) {
       setError(
         caught instanceof ApiRequestError ? caught.message : 'Could not send that.',
@@ -120,26 +118,11 @@ export function ComposePanel({ accounts }: { accounts: ConnectedAccount[] }) {
 
   return (
     <section className="card compose">
-      <div className="card__head">
-        <h2>
-          <SendIcon size={17} />
-          Compose
-        </h2>
-        <button
-          type="button"
-          className={open ? 'link' : 'icon-btn'}
-          onClick={() => setOpen(!open)}
-        >
-          {open ? 'Close' : 'New message'}
-        </button>
-      </div>
-
       <div role="status" aria-live="polite">
         {notice && <p className="notice">{notice}</p>}
       </div>
 
-      {open && (
-        <form className="compose__form" onSubmit={send}>
+      <form className="compose__form" onSubmit={send}>
           <label htmlFor="compose-from">From</label>
           <select
             id="compose-from"
@@ -178,13 +161,16 @@ export function ComposePanel({ accounts }: { accounts: ConnectedAccount[] }) {
             onChange={(event) => setBody(event.target.value)}
           />
 
-          <label htmlFor="compose-files">Attachments</label>
-          <input
-            id="compose-files"
-            type="file"
-            multiple
-            onChange={(event) => void addFiles(event.target.files)}
-          />
+          <span className="formlabel">Attachments</span>
+          <label className="filedrop">
+            <PaperclipIcon size={16} />
+            {files.length === 0 ? 'Choose files' : 'Add more files'}
+            <input
+              type="file"
+              multiple
+              onChange={(event) => void addFiles(event.target.files)}
+            />
+          </label>
 
           {files.length > 0 && (
             <ul className="attachlist">
@@ -230,8 +216,7 @@ export function ComposePanel({ accounts }: { accounts: ConnectedAccount[] }) {
             <SendIcon size={16} />
             {sending ? 'Sending…' : 'Send'}
           </button>
-        </form>
-      )}
+      </form>
 
       <div role="alert" aria-live="assertive">
         {error && <p className="bad">{error}</p>}

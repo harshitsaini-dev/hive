@@ -154,17 +154,16 @@ function MessageBody({ message }: { message: ParsedMessage }) {
         <pre className="reader__text">{message.text}</pre>
 
         {/*
-          HTML is offered, never rendered by default.
-          The markup comes from whoever sent the message and could carry
-          tracking pixels, remote images that leak the read, or script. A
-          sandboxed iframe with no allow-scripts and no same-origin means it
-          cannot reach this page, this origin's cookies, or the session.
+          HTML is offered, never rendered by default. The markup comes from
+          whoever sent the message and could carry tracking pixels, remote
+          images that leak the read, or script — see HtmlFrame for how each of
+          those is blocked.
         */}
         {message.html && (
           <div className="reader__htmltoggle">
             <button
               type="button"
-              className="link"
+              className="link link--inline"
               onClick={() => setShowHtml(!showHtml)}
             >
               {showHtml ? 'Hide formatted version' : 'Show formatted version'}
@@ -193,32 +192,70 @@ function MessageBody({ message }: { message: ParsedMessage }) {
 }
 
 /**
- * Renders sender HTML inside a locked-down iframe.
+ * Renders sender HTML inside a locked-down iframe that sizes to its content.
  *
- * `sandbox` with no tokens is the maximum restriction the attribute allows:
- * no script, no forms, no navigation, and a null origin so it shares nothing
- * with this page. The CSP meta blocks remote loads, which is what stops a
- * tracking pixel from reporting that the mail was opened.
+ * **On the sandbox value.** `sandbox=""` is the strictest setting, but it
+ * gives the frame a null origin, so the parent cannot measure it — which left
+ * a short fixed-height box with its own scrollbar nested inside the reader's,
+ * and a long email became a letterbox.
+ *
+ * `allow-same-origin` *without* `allow-scripts` is the tradeoff taken here.
+ * Scripting stays off, and with no script able to run there is nothing to
+ * exploit the shared origin with: no access to cookies, storage or the parent
+ * DOM. The CSP below still blocks every remote load, so a tracking pixel
+ * cannot report that the message was opened.
+ *
+ * Adding `allow-scripts` alongside `allow-same-origin` would undo all of this
+ * at once — the combination lets the frame remove its own sandbox. Never do
+ * both.
  */
 function HtmlFrame({ html }: { html: string }) {
+  // Small enough that a one-line message does not sit in a tall empty box;
+  // measurement replaces it as soon as the frame loads.
+  const [height, setHeight] = useState(120)
+
   const document = `<!doctype html>
 <html><head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;">
 <style>
-  body { margin:0; padding:12px; font:14px/1.5 system-ui, sans-serif; color:#2b2620; background:#fff; }
+  html, body { margin:0; padding:0; }
+  body { padding:14px; font:14px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+         color:#2b2620; background:#fff; overflow-x:hidden; word-break:break-word; }
   img { max-width:100%; height:auto; }
+  table { max-width:100% !important; }
   a { pointer-events:none; color:inherit; }
 </style>
 </head><body>${html}</body></html>`
+
+  function measure(frame: HTMLIFrameElement | null) {
+    const body = frame?.contentDocument?.body
+    if (!body) return
+
+    /*
+     * The body, not documentElement.
+     *
+     * `documentElement.scrollHeight` reports the frame's own height whenever
+     * the content is shorter than it — measured 150 for a one-line message,
+     * which is how a two-word email ended up in a tall empty box. The body
+     * reports the content itself, and still grows past the frame when the
+     * message is long.
+     */
+    const measured = Math.max(body.scrollHeight, body.offsetHeight)
+    if (measured > 0) setHeight(measured + 2)
+  }
 
   return (
     <iframe
       className="reader__frame"
       title="Message content"
-      sandbox=""
+      sandbox="allow-same-origin"
       srcDoc={document}
+      style={{ height: `${height}px` }}
+      // Remote content is blocked by the CSP, so nothing loads late and
+      // changes the height after this fires.
+      onLoad={(event) => measure(event.currentTarget)}
     />
   )
 }

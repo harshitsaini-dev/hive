@@ -278,7 +278,7 @@ export function MailView({
     load.messages.length > 0 && selected.size === load.messages.length
 
   return (
-    <section className={reading ? 'view view--split' : 'view'}>
+    <section className={reading ? 'view view--mail view--split' : 'view view--mail'}>
       <header className="view__head">
         <h1>
           {mode === 'trash' ? <TrashIcon size={20} /> : <MailIcon size={20} />}

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type CleanupRule } from './api.js'
-import { PlusIcon, ScheduleIcon, TrashIcon } from './Icons.js'
+import { TrashIcon } from './Icons.js'
+import { RulesWizard } from './RulesWizard.js'
 
 const SCHEDULES = [
   { value: 'manual', label: 'Only when I run it' },
@@ -9,17 +10,8 @@ const SCHEDULES = [
   { value: 'weekly', label: 'Every week' },
 ] as const
 
-const EXAMPLES = [
-  'category:promotions older_than:30d',
-  'from:noreply@ older_than:90d',
-  'is:unread older_than:1y',
-]
-
 export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
   const [rules, setRules] = useState<CleanupRule[] | null>(null)
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [query, setQuery] = useState('')
-  const [schedule, setSchedule] = useState<'manual' | 'daily' | 'weekly'>('manual')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -37,24 +29,6 @@ export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
   useEffect(() => {
     void refresh()
   }, [refresh])
-
-  async function create(event: FormEvent) {
-    event.preventDefault()
-    setBusy('create')
-    setError(null)
-
-    try {
-      await api.createRule({ accountId, query: query.trim(), schedule })
-      setQuery('')
-      await refresh()
-    } catch (caught) {
-      setError(
-        caught instanceof ApiRequestError ? caught.message : 'Could not save that rule.',
-      )
-    } finally {
-      setBusy(null)
-    }
-  }
 
   async function act(id: string, work: () => Promise<void>) {
     setBusy(id)
@@ -75,14 +49,7 @@ export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
     accounts.find((account) => account.id === id)?.gmailAddress ?? 'unknown account'
 
   return (
-    <section className="card rules">
-      <div className="card__head">
-        <h2>
-          <ScheduleIcon size={17} />
-          Cleanup rules
-        </h2>
-      </div>
-
+    <section className="rules">
       {/*
         Stated plainly, because a rule runs unattended and people should know
         exactly how far it can go. Rules can only trash — see ADR 0002.
@@ -93,71 +60,7 @@ export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
         thirty days.
       </p>
 
-      <form className="rules__form" onSubmit={create}>
-        <div className="rules__row">
-          <label htmlFor="rule-account" className="sr-only">
-            Account
-          </label>
-          <select
-            id="rule-account"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          >
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.gmailAddress}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor="rule-schedule" className="sr-only">
-            Schedule
-          </label>
-          <select
-            id="rule-schedule"
-            value={schedule}
-            onChange={(event) =>
-              setSchedule(event.target.value as typeof schedule)
-            }
-          >
-            {SCHEDULES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <label htmlFor="rule-query">Search to match</label>
-        <input
-          id="rule-query"
-          value={query}
-          placeholder="category:promotions older_than:30d"
-          onChange={(event) => setQuery(event.target.value)}
-        />
-
-        <div className="rules__examples">
-          {EXAMPLES.map((example) => (
-            <button
-              key={example}
-              type="button"
-              className="chip"
-              onClick={() => setQuery(example)}
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-
-        <button
-          type="submit"
-          className="icon-btn"
-          disabled={busy === 'create' || query.trim().length < 3 || !accountId}
-        >
-          <PlusIcon size={16} />
-          {busy === 'create' ? 'Saving…' : 'Save rule'}
-        </button>
-      </form>
+      <RulesWizard accounts={accounts} onCreated={refresh} />
 
       <div role="status" aria-live="polite">
         {notice && <p className="notice">{notice}</p>}

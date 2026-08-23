@@ -2007,3 +2007,456 @@ input[type='file'] {
   padding-top: 0.35rem;
   border-top: 1px solid var(--border);
 }
+
+/* ==========================================================================
+   Polish pass
+   ========================================================================== */
+
+/* ---- checkboxes and radios ---------------------------------------------- */
+
+/*
+ * The native controls ignore the palette entirely and look pasted in from
+ * another application, which is especially obvious against dark clay. Drawn
+ * here instead — but only the box: focus, disabled and keyboard behaviour all
+ * still come from the real input underneath.
+ */
+input[type='checkbox'],
+input[type='radio'] {
+  appearance: none;
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-clay),
+    border-color var(--duration-fast) var(--ease-clay);
+}
+
+input[type='radio'] {
+  border-radius: var(--radius-full);
+}
+
+input[type='checkbox']:checked,
+input[type='radio']:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: none;
+}
+
+/* The tick is drawn rather than a glyph, so it scales with the box. */
+input[type='checkbox']:checked::after {
+  content: '';
+  display: block;
+  width: 0.3rem;
+  height: 0.55rem;
+  margin: 0.02rem auto 0;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+input[type='radio']:checked::after {
+  content: '';
+  display: block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin: 0.28rem auto;
+  border-radius: 50%;
+  background: var(--accent-ink);
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The theme toggle's radios stay invisible — the pill is the control. */
+.theme-toggle__option input[type='radio'] {
+  appearance: none;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.theme-toggle__option input[type='radio']::after {
+  content: none;
+}
+
+/* ---- file input ---------------------------------------------------------- */
+
+/*
+ * The native button cannot be styled, so it is hidden and the label acts as
+ * the control. `.filedrop` is a real <label>, which keeps the click target
+ * and keyboard behaviour without any JavaScript.
+ */
+.filedrop {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem 1rem;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-clay),
+    color var(--duration-fast) var(--ease-clay);
+}
+
+.filedrop:hover,
+.filedrop:focus-within {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.filedrop input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* ---- scrolling ----------------------------------------------------------- */
+
+/*
+ * One scroll region per pane, and no page scroll behind them.
+ *
+ * Previously the document scrolled *and* the reading pane scrolled, so a wide
+ * screen showed two scrollbars stacked at the right edge and the wheel did
+ * different things depending on where the pointer happened to be.
+ *
+ * Only on wide screens: below the split breakpoint the panes stack, and a
+ * normal page scroll is the right behaviour there.
+ */
+@media (min-width: 68rem) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app__body {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .app__nav {
+    position: static;
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  .app__main {
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  /* Inside a scrolling main, sticky is measured against that box. */
+  .reader {
+    top: 0;
+    max-height: calc(100dvh - 8rem);
+  }
+}
+
+/* ---- view widths --------------------------------------------------------- */
+
+/*
+ * Full-width is right for the mail split and wrong for everything else: a
+ * compose form stretched across 1600px puts the label and its field a screen
+ * apart. Forms get a comfortable measure; only the mail view opts out.
+ */
+.view {
+  max-width: 52rem;
+}
+
+.view--mail {
+  max-width: none;
+}
+
+.compose__form,
+.rules__form {
+  max-width: 40rem;
+}
+
+/* A label that is not tied to one input — used where a group needs a heading. */
+.formlabel {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---- cleanup wizard ------------------------------------------------------ */
+
+.wizard {
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+}
+
+.wizard__steps {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.wizard__steps li {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.wizard__steps span {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.wizard__steps li[data-state='current'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.wizard__steps li[data-state='current'] span {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/*
+ * The number is the point of this step, so it is the largest thing on screen.
+ * A rule that runs unattended should never be saved on a guess.
+ */
+.wizard__count {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.wizard__count strong {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+
+.wizard__count--live strong {
+  color: var(--accent);
+}
+
+.wizard__count span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.wizard__schedules {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.radioline {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.radioline:hover {
+  box-shadow: var(--shadow-raised);
+}
+
+.radioline input {
+  margin-top: 0.15rem;
+}
+
+.radioline > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.radioline strong {
+  font-size: 0.92rem;
+}
+
+.wizard__summary {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.wizard__summary svg {
+  margin-top: 0.15rem;
+  color: var(--ok);
+}
+
+.wizard__summary code,
+.wizard code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  background: var(--bg);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+.wizard__actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+}
+
+/* Forms sit in a card no wider than the fields inside them. */
+.compose,
+.wizard {
+  max-width: 42rem;
+}
+
+.compose__form,
+.rules__form {
+  max-width: none;
+}
+
+/* ---- ghost buttons ------------------------------------------------------- */
+
+/*
+ * `.link` used to be underlined text. That reads as navigation — something
+ * that takes you elsewhere — when every one of these actually performs an
+ * action: close, remove, pause, toggle a panel. They are buttons, so they now
+ * look like buttons, just quiet ones.
+ *
+ * Placed after the Claymorphism pass because that section deliberately
+ * stripped their elevation, and this restores a lighter treatment.
+ */
+button.link {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: none;
+  transition:
+    background var(--duration-fast) var(--ease-clay),
+    border-color var(--duration-fast) var(--ease-clay),
+    color var(--duration-fast) var(--ease-clay);
+}
+
+button.link:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+button.link:active:not(:disabled) {
+  transform: none;
+  box-shadow: var(--shadow-pressed);
+}
+
+button.link:disabled {
+  opacity: 0.5;
+}
+
+/*
+ * Inline within a sentence, where a boxed control would break the line.
+ * The filter panel's "Use Gmail syntax" sits in a row of checkboxes, so it
+ * keeps the underline that marks it as interactive text.
+ */
+button.link--inline {
+  padding: 0;
+  border: 0;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+button.link--inline:hover:not(:disabled) {
+  border-color: transparent;
+  background: none;
+  text-decoration: underline;
+}
+
+/* Links proper — the few that really do navigate. */
+a.link-plain {
+  text-decoration: none;
+}
+
+/* ---- reading pane sizing ------------------------------------------------- */
+
+/*
+ * The frame grows to fit its message rather than scrolling inside the pane
+ * that is already scrolling. Nested scrollbars made every long email a
+ * letterbox, and the wheel did different things a few pixels apart.
+ */
+.reader__frame {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  overflow: hidden;
+}
+
+/* Reading needs the room more than the list does. */
+@media (min-width: 68rem) {
+  .view__list {
+    flex: 1 1 34rem;
+    max-width: 40rem;
+  }
+
+  .reader {
+    flex: 1.15 1 34rem;
+  }
+}
