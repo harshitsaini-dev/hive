@@ -375,6 +375,8 @@ export interface HistoryPage {
   history?: {
     messagesAdded?: { message: MessageRef }[]
     messagesDeleted?: { message: MessageRef }[]
+    labelsAdded?: { message: MessageRef; labelIds?: string[] }[]
+    labelsRemoved?: { message: MessageRef; labelIds?: string[] }[]
   }[]
   historyId?: string
   nextPageToken?: string
@@ -383,6 +385,17 @@ export interface HistoryPage {
 export interface HistoryResult {
   added: MessageRef[]
   removed: MessageRef[]
+  /**
+   * Messages whose labels changed — including everything moved to or out of
+   * Trash.
+   *
+   * Originally missing, and the omission was not harmless. Trashing a message
+   * does not delete it; it swaps `INBOX` for `TRASH`, which arrives as a
+   * label change and nothing else. An index that ignored those kept showing
+   * mail in the inbox that had been thrown away — from Gmail's own UI, and
+   * from Hive itself.
+   */
+  changed: MessageRef[]
   historyId: string | null
   /** True when Gmail rejected the cursor and a full re-index is required. */
   expired: boolean
@@ -402,6 +415,7 @@ export async function listHistory(
 ): Promise<HistoryResult> {
   const added: MessageRef[] = []
   const removed: MessageRef[] = []
+  const changed: MessageRef[] = []
   let historyId: string | null = null
   let pageToken: string | undefined
 
@@ -415,7 +429,13 @@ export async function listHistory(
     )
 
     if (response.status === 404) {
-      return { added: [], removed: [], historyId: null, expired: true }
+      return {
+        added: [],
+        removed: [],
+        changed: [],
+        historyId: null,
+        expired: true,
+      }
     }
     if (!response.ok) {
       throw new Error(`history.list failed (${response.status})`)
@@ -426,13 +446,22 @@ export async function listHistory(
     for (const entry of page.history ?? []) {
       for (const item of entry.messagesAdded ?? []) added.push(item.message)
       for (const item of entry.messagesDeleted ?? []) removed.push(item.message)
+
+      /*
+       * Which labels changed is not recorded, only that they did. Re-reading
+       * the message is the reliable answer — working out the new label set by
+       * applying a stream of additions and removals in order is the kind of
+       * cleverness that is wrong once and then wrong forever.
+       */
+      for (const item of entry.labelsAdded ?? []) changed.push(item.message)
+      for (const item of entry.labelsRemoved ?? []) changed.push(item.message)
     }
 
     historyId = page.historyId ?? historyId
     pageToken = page.nextPageToken
   } while (pageToken)
 
-  return { added, removed, historyId, expired: false }
+  return { added, removed, changed, historyId, expired: false }
 }
 
 /* ---- the Trash bin ------------------------------------------------------- */

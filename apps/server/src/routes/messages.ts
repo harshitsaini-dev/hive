@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { z } from 'zod'
 import {
   countIndexMatches,
+  deleteIndexedMessages,
   findAnalysisRun,
   getIndexedByIds,
+  moveIndexedLabels,
   listAccountsForOwner,
   searchIndex,
   writeAuditEntry,
@@ -752,6 +754,49 @@ function safeParse<T>(json: string, fallback: T): T {
 }
 
 /**
+ * Keeps the index honest about what Hive itself just did.
+ *
+ * Without this, trashing five hundred messages and letting the list refresh
+ * showed all five hundred still sitting in the inbox — the action succeeded
+ * at Gmail, and the index, which the list now reads from, had not heard about
+ * it. Waiting for the next history pass is not an option: the refresh happens
+ * immediately, and being wrong for an hour about mail the user just moved is
+ * indistinguishable from the action having failed.
+ *
+ * A local correction rather than a re-read, because the outcome is already
+ * known — Gmail confirmed it. The next history pass will overwrite these rows
+ * with Gmail's own version anyway, so a divergence here is temporary by
+ * construction.
+ */
+async function applyToIndex(
+  accountId: string,
+  messageIds: string[],
+  action: 'trash' | 'restore' | 'delete_forever',
+): Promise<void> {
+  try {
+    if (action === 'delete_forever') {
+      await deleteIndexedMessages(accountId, messageIds)
+      return
+    }
+
+    await moveIndexedLabels(
+      accountId,
+      messageIds,
+      action === 'trash'
+        ? { add: 'TRASH', remove: ['INBOX', 'UNREAD'] }
+        : { add: 'INBOX', remove: ['TRASH'] },
+    )
+  } catch (error) {
+    /*
+     * The mail has already moved; this is bookkeeping catching up. Failing the
+     * whole action over it would report a success as a failure, which is the
+     * more dangerous of the two wrong answers.
+     */
+    console.warn(`could not update the index after ${action}:`, error)
+  }
+}
+
+/**
  * Runs a bulk action, optionally in the background with a progress job.
  *
  * Synchronous by default: for a handful of messages the round trip is shorter
@@ -780,6 +825,7 @@ async function runBulkAction(options: {
       await audit(session.account.id)
       await work(session.accessToken, () => {})
     })
+    await applyToIndex(accountId, messageIds, action)
     return { processed: messageIds.length }
   }
 
@@ -798,6 +844,7 @@ async function runBulkAction(options: {
           advanceJob(job.id, processed),
         )
       })
+      await applyToIndex(accountId, messageIds, action)
       finishJob(job.id)
     } catch (error) {
       console.error(`bulk ${action} failed:`, error)

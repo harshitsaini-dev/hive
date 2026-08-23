@@ -413,24 +413,6 @@ export async function countIndexMatches(query: IndexQuery): Promise<number> {
   return Number(result.rows[0]?.n ?? 0)
 }
 
-/** Every matching id, for a bulk action resolved locally. */
-export async function idsFromIndex(
-  query: IndexQuery,
-  limit: number,
-): Promise<string[]> {
-  const where = buildWhere(query)
-
-  const result = await db().execute({
-    sql: `SELECT gmail_message_id FROM message_index
-          WHERE ${where.sql}
-          ORDER BY received_at DESC
-          LIMIT ?`,
-    args: [...where.args, limit],
-  })
-
-  return result.rows.map((row) => String(row.gmail_message_id))
-}
-
 /**
  * The indexed rows for a specific set of Gmail ids.
  *
@@ -459,4 +441,50 @@ export async function getIndexedByIds(
   })
 
   return result.rows as unknown as IndexedRow[]
+}
+
+/**
+ * Applies a label move to indexed rows, without re-reading them from Gmail.
+ *
+ * Used when Hive itself has just trashed or restored something: the outcome
+ * is already known, so the index can be corrected directly rather than
+ * waiting an hour for the next history pass to notice. Gmail's own version
+ * overwrites these rows on that pass regardless, so any divergence is
+ * temporary by construction.
+ *
+ * The labels are stored as a JSON array and rewritten as one. Fiddly, and
+ * still the right shape: a join table would be three more queries per page
+ * for a column nothing filters on except by substring.
+ */
+export async function moveIndexedLabels(
+  accountId: string,
+  gmailMessageIds: readonly string[],
+  change: { add?: string; remove?: readonly string[] },
+): Promise<void> {
+  if (gmailMessageIds.length === 0) return
+
+  const rows = await getIndexedByIds(accountId, gmailMessageIds)
+  if (rows.length === 0) return
+
+  await db().batch(
+    rows.map((row) => {
+      let labels: string[]
+      try {
+        const parsed: unknown = JSON.parse(row.labels_json)
+        labels = Array.isArray(parsed) ? (parsed as string[]) : []
+      } catch {
+        labels = []
+      }
+
+      const next = labels.filter((label) => !change.remove?.includes(label))
+      if (change.add && !next.includes(change.add)) next.push(change.add)
+
+      return {
+        sql: `UPDATE message_index SET labels_json = ?, indexed_at = datetime('now')
+              WHERE account_id = ? AND gmail_message_id = ?`,
+        args: [JSON.stringify(next), accountId, row.gmail_message_id],
+      }
+    }),
+    'write',
+  )
 }

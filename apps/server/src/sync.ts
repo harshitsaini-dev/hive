@@ -333,8 +333,20 @@ async function incremental(
     return { indexed: 0, removed: 0, backfillDone: false, reindexed: true }
   }
 
-  const addedIds = [...new Set(changes.added.map((ref) => ref.id))]
   const removedIds = [...new Set(changes.removed.map((ref) => ref.id))]
+
+  /*
+   * New arrivals and label changes are re-read the same way. A message moved
+   * to Trash is not deleted — it swaps `INBOX` for `TRASH` — so treating a
+   * label change as anything less than "fetch this again" leaves the index
+   * showing mail in a folder it is no longer in.
+   */
+  const addedIds = [
+    ...new Set([
+      ...changes.added.map((ref) => ref.id),
+      ...changes.changed.map((ref) => ref.id),
+    ]),
+  ].filter((id) => !removedIds.includes(id))
 
   if (addedIds.length > 0) {
     const metadata = await fetchMessagesMetadata(accessToken, addedIds)

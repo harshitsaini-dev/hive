@@ -199,3 +199,77 @@ test.describe('index-served search', () => {
     expect(last(seen).get('pageToken')).toBeNull()
   })
 })
+
+/*
+ * The index is what the list reads from now, so anything Hive does to a
+ * mailbox has to reach it immediately. Waiting for the next hourly pass means
+ * trashing five hundred messages, watching the list refresh, and seeing all
+ * five hundred still sitting there — which is indistinguishable from the
+ * action having failed.
+ */
+test('mail trashed from Hive leaves the list at once', async ({ page }) => {
+  const rows = [0, 1, 2].map((n) => ({
+    gmailMessageId: `m${n}`,
+    threadId: `t${n}`,
+    accountId: ACCOUNT.id,
+    gmailAddress: ACCOUNT.gmailAddress,
+    from: 'Sender <s@example.test>',
+    subject: `Message ${n}`,
+    snippet: 'preview',
+    labels: ['INBOX'],
+    receivedAt: new Date(Date.UTC(2026, 7, 20, 12, n)).toISOString(),
+  }))
+
+  let trashed = false
+
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ user: { id: 'u1', email: 'tester@example.test' } }),
+    }),
+  )
+  await page.route('**/api/accounts', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ accounts: [ACCOUNT] }),
+    }),
+  )
+
+  // Stands in for the server's write-through: once the trash call has been
+  // made, the very next search must not return those messages.
+  await page.route('**/api/messages?**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        source: 'index',
+        total: trashed ? 0 : 3,
+        nextOffset: null,
+        nextPageToken: null,
+        messages: trashed ? [] : rows,
+        accounts: [],
+        skipped: [],
+      }),
+    }),
+  )
+
+  await page.route('**/api/messages/trash', (route) => {
+    trashed = true
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ trashed: 3 }),
+    })
+  })
+
+  await page.goto('/')
+  await expect(page.getByText('Message 0')).toBeVisible()
+
+  await page.getByLabel(/Select page/).check()
+  await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
+
+  await expect(page.getByText(/Moved to Trash: 3/)).toBeVisible()
+  await expect(page.getByText('Message 0')).toBeHidden()
+})
