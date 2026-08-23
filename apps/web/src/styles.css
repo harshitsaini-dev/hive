@@ -2221,27 +2221,39 @@ input[type='radio'] {
  * transparent pseudo-element, so the tappable area reaches 44px without the
  * checkbox visually bloating or pushing its neighbours around.
  */
+/*
+ * The hit area is not behind a media query, deliberately.
+ *
+ * It was, and `pointer: coarse` does not match in headless Chromium — so the
+ * rule was absent in CI and the test that proved the target worked failed
+ * there while passing locally. Gating it was never worth much anyway: a
+ * forgiving checkbox is not a worse checkbox with a mouse, and a rule that
+ * only exists on some machines is a rule nobody can test.
+ *
+ * Grown up, down and outward-left, but *not* to the right. A symmetric 44px
+ * target reaches 11px into whatever sits beside the box, and beside a message
+ * checkbox is the message row — tapping near its leading edge to open a
+ * message ticked the box instead. Vertical is where thumbs miss anyway;
+ * sideways there is a neighbour.
+ */
+input[type='checkbox'],
+input[type='radio'] {
+  position: relative;
+}
+
+input[type='checkbox']::before,
+input[type='radio']::before {
+  content: '';
+  position: absolute;
+  inset: -11px 0 -11px -11px;
+}
+
+/* The drawn box grows only where a finger is doing the pointing. */
 @media (pointer: coarse) {
   input[type='checkbox'],
   input[type='radio'] {
-    position: relative;
     width: 1.35rem;
     height: 1.35rem;
-  }
-
-  /*
-   * Grown up, down and outward-left, but *not* to the right.
-   *
-   * A symmetric 44px target reached 11px into whatever sits beside the box,
-   * and in a message row that is the row itself — tapping near its leading
-   * edge to open a message ticked the checkbox instead. Vertical is where
-   * thumbs miss anyway; sideways there is a neighbour.
-   */
-  input[type='checkbox']::before,
-  input[type='radio']::before {
-    content: '';
-    position: absolute;
-    inset: -11px 0 -11px -11px;
   }
 }
 

@@ -172,9 +172,13 @@ test('checkboxes stay square', async ({ page }) => {
 })
 
 /*
- * Square and 22px across is still small for a thumb. The rest of the target
- * is a transparent pseudo-element, which is invisible to `boundingBox` — the
- * only way to know it works is to tap where a thumb would actually land.
+ * Square and small is still small for a thumb. The rest of the target is a
+ * transparent pseudo-element, invisible to `boundingBox` — the only way to
+ * know it works is to tap where a thumb would actually land.
+ *
+ * Not gated on `pointer: coarse`: that does not match in headless Chromium,
+ * so gating it made this test pass locally and fail in CI, which is the worst
+ * of both. A forgiving checkbox is not a worse checkbox with a mouse.
  */
 test('a checkbox can be tapped slightly off-centre', async ({ page }) => {
   await stub(page)
