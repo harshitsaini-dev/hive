@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import {
   deleteAccount,
   findAccountForOwner,
@@ -88,62 +89,50 @@ accountsRouter.get(
 )
 
 /**
- * The OAuth callback.
+ * POST /accounts/oauth/complete
  *
- * Exported rather than mounted on this router because its path is dictated by
- * GOOGLE_REDIRECT_URI — it has to match what is registered in the Google Cloud
- * console exactly. index.ts derives the mount point from that same variable so
- * the two cannot drift apart.
+ * Finishes the connection using the `code` Google handed back.
  *
- * Google redirects the browser here, so it responds with a redirect to the web
- * app rather than JSON — the user is looking at a page, not calling an API.
+ * **Google does not call this.** Google redirects the *browser* to
+ * GOOGLE_REDIRECT_URI, which is a page in the web app; that page then calls
+ * this endpoint with a same-origin fetch.
  *
- * `requireAuth` works despite the request originating from Google because the
- * session cookie is SameSite=Lax and this is a top-level GET navigation.
+ * That indirection is the whole point. The obvious design — have Google
+ * redirect straight to an API route — was tried first and failed in
+ * production with a bare 401: arriving from accounts.google.com is a
+ * cross-site top-level navigation, and the browser does not reliably attach a
+ * `SameSite=Lax` session cookie to it. A same-origin XHR from a page the user
+ * is already on carries both cookies without question.
  */
-export const oauthCallback = [
+accountsRouter.post(
+  '/oauth/complete',
   requireAuth,
   asyncRoute(async (req, res) => {
     const { user } = authed(req)
     const cookies = req.cookies as Record<string, string> | undefined
     const expectedState = cookies?.[OAUTH_STATE_COOKIE]
 
-    const clearState = () =>
+    const parsed = z
+      .object({ code: z.string().min(1), state: z.string().min(1) })
+      .safeParse(req.body)
+
+    if (!parsed.success) throw badRequest('Malformed OAuth response')
+
+    // CSRF: the state must match the cookie set when the flow began, so a
+    // code obtained in someone else's browser cannot be redeemed here.
+    if (!expectedState || !safeEqual(parsed.data.state, expectedState)) {
       res.clearCookie(OAUTH_STATE_COOKIE, { path: '/' })
-
-    const back = (params: Record<string, string>) => {
-      const url = new URL('/accounts', config.WEB_ORIGIN)
-      for (const [key, value] of Object.entries(params)) {
-        url.searchParams.set(key, value)
-      }
-      clearState()
-      res.redirect(url.toString())
+      throw badRequest('That connection attempt expired. Start it again.')
     }
 
-    // The user pressed Cancel, or Google refused the request.
-    const errorParam = req.query.error
-    if (typeof errorParam === 'string') {
-      back({ connected: 'cancelled' })
-      return
-    }
-
-    const code = req.query.code
-    const state = req.query.state
-
-    if (typeof code !== 'string' || typeof state !== 'string') {
-      throw badRequest('Malformed OAuth callback')
-    }
-    if (!expectedState || !safeEqual(state, expectedState)) {
-      throw badRequest('OAuth state mismatch — start the connection again')
-    }
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: '/' })
 
     let tokens
     try {
-      tokens = await exchangeCodeForTokens(oauth, code)
+      tokens = await exchangeCodeForTokens(oauth, parsed.data.code)
     } catch (error) {
       console.error('token exchange failed:', error)
-      back({ connected: 'failed' })
-      return
+      throw badRequest('Google would not complete the connection. Try again.')
     }
 
     // Ask Google which mailbox these tokens belong to rather than trusting
@@ -153,8 +142,7 @@ export const oauthCallback = [
       profile = await getProfile(tokens.accessToken)
     } catch (error) {
       console.error('profile lookup failed:', error)
-      back({ connected: 'failed' })
-      return
+      throw badRequest('Connected, but Google would not say which account.')
     }
 
     const account = await upsertAccount({
@@ -170,9 +158,9 @@ export const oauthCallback = [
       details: { gmailAddress: profile.emailAddress },
     })
 
-    back({ connected: 'ok', account: profile.emailAddress })
+    res.json({ account: toApiShape(account) })
   }),
-] as const
+)
 
 /** DELETE /accounts/:id — disconnect. Audited before the row disappears. */
 accountsRouter.delete(

@@ -47,7 +47,7 @@ services:
         value: https://hive.harshitsaini.in/auth/google/callback
 
       - key: OTP_FROM_ADDRESS
-        value: Bee <no-reply@bee.harshitsaini.in>
+        value: Hive <no-reply@bee.harshitsaini.in>
 
       # --- secrets: entered in the Render dashboard, never committed --------
       - key: GOOGLE_CLIENT_ID

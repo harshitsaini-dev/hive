@@ -37,6 +37,8 @@ interface Calls {
   restore: number
   deleteForever: number
   lastDeletePayload: unknown
+  lastTrashPayload: unknown
+  resolveCalls: number
 }
 
 async function stubApi(page: Page): Promise<Calls> {
@@ -45,6 +47,8 @@ async function stubApi(page: Page): Promise<Calls> {
     restore: 0,
     deleteForever: 0,
     lastDeletePayload: null,
+    lastTrashPayload: null,
+    resolveCalls: 0,
   }
 
   await page.route('**/api/auth/me', (route) =>
@@ -80,8 +84,24 @@ async function stubApi(page: Page): Promise<Calls> {
     })
   })
 
+  // Stands in for a query that matches far more than one page.
+  await page.route('**/api/messages/resolve-query', (route) => {
+    calls.resolveCalls += 1
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        messageIds: Array.from({ length: 137 }, (_, i) => 'bulk-' + i),
+        count: 137,
+        truncated: false,
+        limit: 5000,
+      }),
+    })
+  })
+
   await page.route('**/api/messages/trash', (route) => {
     calls.trash += 1
+    calls.lastTrashPayload = route.request().postDataJSON()
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -132,19 +152,19 @@ test.describe('mailbox', () => {
 
     await page.getByLabel(/Select all 3/).check()
 
-    await expect(page.getByText('3 selected')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Move to Trash/ })).toBeVisible()
+    await expect(page.getByText('3 selected on this page')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Move \d+ to Trash/ })).toBeVisible()
     // Permanent deletion is not offered from the inbox at all.
-    await expect(page.getByRole('button', { name: 'Delete forever' })).toBeHidden()
+    await expect(page.getByRole('button', { name: /Delete \d+ forever/ })).toBeHidden()
   })
 
   test('the Trash tab offers restore and delete forever', async ({ page }) => {
     await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
 
-    await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Delete forever' })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Move to Trash/ })).toBeHidden()
+    await expect(page.getByRole('button', { name: /Restore \d+/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Delete \d+ forever/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Move \d+ to Trash/ })).toBeHidden()
   })
 })
 
@@ -155,7 +175,7 @@ test.describe('permanent deletion', () => {
 
     await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
-    await page.getByRole('button', { name: 'Delete forever' }).click()
+    await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
 
     const dialog = page.getByRole('alertdialog')
     await expect(dialog).toBeVisible()
@@ -182,11 +202,11 @@ test.describe('permanent deletion', () => {
     await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
 
-    await page.getByRole('button', { name: 'Delete forever' }).click()
+    await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('alertdialog')).toBeHidden()
 
-    await page.getByRole('button', { name: 'Delete forever' }).click()
+    await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByRole('alertdialog')).toBeHidden()
 
@@ -199,7 +219,7 @@ test.describe('permanent deletion', () => {
 
     await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
-    await page.getByRole('button', { name: 'Delete forever' }).click()
+    await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
 
     const dialog = page.getByRole('alertdialog')
     await dialog.getByLabel(/Type/).fill('permanently delete')
@@ -221,7 +241,7 @@ test.describe('permanent deletion', () => {
 
     await page.getByRole('button', { name: 'Trash' }).click()
     await page.getByLabel(/Select all 3/).check()
-    await page.getByRole('button', { name: 'Delete forever' }).click()
+    await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
 
     const dialog = page.getByRole('alertdialog')
     await expect(dialog.getByLabel(/Type/)).toBeFocused()
@@ -234,5 +254,128 @@ test.describe('permanent deletion', () => {
       )
       expect(inside, 'focus escaped the confirmation dialog').toBe(true)
     }
+  })
+})
+
+/**
+ * Acting on a whole search rather than one page.
+ *
+ * This is the product's headline claim — "clean out thousands at a time" — and
+ * it is also the path with the largest blast radius, so the count shown must
+ * be the count acted on.
+ */
+test.describe('selecting a whole search', () => {
+  test('is only offered once the page is fully selected', async ({ page }) => {
+    await stubApi(page)
+    await page.goto('/')
+
+    const expand = page.getByRole('button', {
+      name: /Select everything matching this search/,
+    })
+
+    // One message ticked is not a signal that someone wants all of them.
+    await page.locator('.message input[type="checkbox"]').first().check()
+    await expect(expand).toBeHidden()
+
+    await page.getByLabel(/Select all 3/).check()
+    await expect(expand).toBeVisible()
+  })
+
+  test('acts on every match, not just the visible page', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    await page.getByLabel(/Select all 3/).check()
+    await page
+      .getByRole('button', { name: /Select everything matching this search/ })
+      .click()
+
+    // The real count replaces the page count everywhere it is shown.
+    await expect(page.getByText(/137 selected/)).toBeVisible()
+    const trash = page.getByRole('button', { name: /Move 137 to Trash/ })
+    await expect(trash).toBeVisible()
+
+    await trash.click()
+    await expect(page.getByText(/Moved to Trash: 137/)).toBeVisible()
+
+    expect(calls.resolveCalls).toBe(1)
+    // The button said 137, so 137 IDs must have been sent — not the 3 on screen.
+    expect(
+      (calls.lastTrashPayload as { messageIds: string[] }).messageIds,
+    ).toHaveLength(137)
+  })
+
+  test('can be narrowed back to the visible page', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    await page.getByLabel(/Select all 3/).check()
+    await page
+      .getByRole('button', { name: /Select everything matching this search/ })
+      .click()
+    await expect(page.getByText(/137 selected/)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Just this page instead' }).click()
+    await expect(page.getByText(/3 selected on this page/)).toBeVisible()
+
+    await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
+    expect(
+      (calls.lastTrashPayload as { messageIds: string[] }).messageIds,
+    ).toHaveLength(3)
+  })
+
+  test('warns when the match is larger than the cap', async ({ page }) => {
+    await stubApi(page)
+
+    // Re-route so this query reports hitting the ceiling.
+    await page.route('**/api/messages/resolve-query', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messageIds: Array.from({ length: 5000 }, (_, i) => 'capped-' + i),
+          count: 5000,
+          truncated: true,
+          limit: 5000,
+        }),
+      }),
+    )
+
+    await page.goto('/')
+    await page.getByLabel(/Select all 3/).check()
+    await page
+      .getByRole('button', { name: /Select everything matching this search/ })
+      .click()
+
+    // Said before the action, not discovered after it.
+    await expect(page.getByText(/matches more than 5,000/)).toBeVisible()
+    await expect(page.getByText(/run the action again/)).toBeVisible()
+  })
+
+  test('a whole-search permanent delete confirms the real count', async ({
+    page,
+  }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    await page.getByRole('button', { name: 'Trash' }).click()
+    await page.getByLabel(/Select all 3/).check()
+    await page
+      .getByRole('button', { name: /Select everything matching this search/ })
+      .click()
+
+    await page.getByRole('button', { name: /Delete 137 forever/ }).click()
+
+    const dialog = page.getByRole('alertdialog')
+    // The dialog must state what will actually be destroyed.
+    await expect(dialog.getByText(/Permanently delete 137 messages/)).toBeVisible()
+
+    await dialog.getByLabel(/Type/).fill('permanently delete')
+    await dialog.getByRole('button', { name: 'Delete forever' }).click()
+
+    await expect(page.getByText(/Permanently deleted 137/)).toBeVisible()
+    expect(
+      (calls.lastDeletePayload as { messageIds: string[] }).messageIds,
+    ).toHaveLength(137)
   })
 })

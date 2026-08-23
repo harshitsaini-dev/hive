@@ -1545,3 +1545,34 @@ input[type='radio'] {
     transform: none;
   }
 }
+
+/* ---- bulk selection ------------------------------------------------------ */
+
+.bulkbar__count {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+  align-items: baseline;
+}
+
+/*
+ * Stated before the action, not after: a user who thinks they cleared
+ * everything and actually cleared the first five thousand will not find out
+ * until the mail is still there.
+ */
+.mailbox__truncated {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.mailbox__truncated svg {
+  margin-top: 0.15rem;
+}

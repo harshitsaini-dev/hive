@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiRequestError, type User } from './api.js'
 import { LandingPage } from './LandingPage.js'
 import { LegalPage, type LegalKind } from './LegalPage.js'
+import { OAuthCallbackView } from './views/OAuthCallbackView.js'
 import { LoginPage } from './LoginPage.js'
 import { AppShell } from './AppShell.js'
 import { PageSkeleton } from './Skeleton.js'
@@ -15,7 +16,14 @@ type Auth =
   | { state: 'unreachable'; detail: string | null }
 
 /** The only paths the app serves. Anything else is a 404. */
-const KNOWN_PATHS = new Set(['/', '/accounts', '/privacy', '/terms'])
+const KNOWN_PATHS = new Set([
+  '/',
+  '/accounts',
+  '/privacy',
+  '/terms',
+  // Where Google sends the browser back to. Handled by the SPA, not the API.
+  '/auth/google/callback',
+])
 
 export function App() {
   const [auth, setAuth] = useState<Auth>({ state: 'checking' })
@@ -73,6 +81,21 @@ export function App() {
         onBack={() => {
           setLegal(null)
           window.history.pushState({}, '', '/')
+        }}
+      />
+    )
+  }
+
+  /*
+   * Handled ahead of everything else. The URL carries a single-use code, so
+   * anything that re-routes or re-renders first — the offline screen, the
+   * landing page — would throw it away.
+   */
+  if (window.location.pathname === '/auth/google/callback') {
+    return (
+      <OAuthCallbackView
+        onFinished={() => {
+          window.location.replace('/accounts')
         }}
       />
     )

@@ -10,7 +10,7 @@ import { errorHandler, asyncRoute, notFound } from './errors.js'
 import { loadDevTls } from './tls.js'
 import { rateLimit } from './middleware/rate-limit.js'
 import { authRouter } from './routes/auth.js'
-import { accountsRouter, oauthCallback } from './routes/accounts.js'
+import { accountsRouter } from './routes/accounts.js'
 import { messagesRouter } from './routes/messages.js'
 import { rulesRouter } from './routes/rules.js'
 import { startRuleScheduler } from './rules-runner.js'
@@ -84,14 +84,6 @@ app.use(
   messagesRouter,
 )
 app.use('/rules', rulesRouter)
-
-/**
- * Mounted at whatever path GOOGLE_REDIRECT_URI names, so the route and the URI
- * registered in the Google Cloud console are guaranteed to agree. Getting
- * these out of step produces a redirect_uri_mismatch that looks like a Google
- * problem rather than a routing one.
- */
-app.get(new URL(config.GOOGLE_REDIRECT_URI).pathname, ...oauthCallback)
 
 app.use((_req, _res, next) => next(notFound('No such endpoint')))
 app.use(errorHandler)

@@ -97,6 +97,16 @@ export const api = {
 
   startConnect: () => request<{ url: string }>('/accounts/oauth/start'),
 
+  /**
+   * Redeems the code Google handed back. Same-origin on purpose — see
+   * OAuthCallbackView for why Google is not pointed at the API directly.
+   */
+  completeConnect: (code: string, state: string) =>
+    request<{ account: ConnectedAccount }>('/accounts/oauth/complete', {
+      method: 'POST',
+      body: JSON.stringify({ code, state }),
+    }),
+
   disconnect: (id: string) =>
     request<void>(`/accounts/${id}`, { method: 'DELETE' }),
 
@@ -106,6 +116,24 @@ export const api = {
     if (options.accountId) params.set('accountId', options.accountId)
     return request<SearchResult>(`/messages?${params.toString()}`)
   },
+
+  /**
+   * Every message ID a query matches, not just the visible page.
+   *
+   * Returns a real count so a confirmation can state one, and `truncated` when
+   * the query matched more than the server's per-action cap — the UI has to
+   * say so, or the user believes the action covered everything.
+   */
+  resolveQuery: (accountId: string, query: string) =>
+    request<{
+      messageIds: string[]
+      count: number
+      truncated: boolean
+      limit: number
+    }>('/messages/resolve-query', {
+      method: 'POST',
+      body: JSON.stringify({ accountId, query }),
+    }),
 
   trashMessages: (accountId: string, messageIds: string[]) =>
     request<{ trashed: number }>('/messages/trash', {

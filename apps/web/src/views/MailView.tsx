@@ -50,6 +50,13 @@ export function MailView({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pending, setPending] = useState<'trash' | 'restore' | 'delete' | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [resolving, setResolving] = useState(false)
+  /** Set when the selection covers the whole query, not just this page. */
+  const [wholeQuery, setWholeQuery] = useState<{
+    rows: { accountId: string; gmailMessageId: string }[]
+    truncated: boolean
+    limit: number
+  } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   // Trash is just a different Gmail query; there is no second index.
@@ -66,6 +73,7 @@ export function MailView({
 
     setLoad((previous) => ({ ...previous, loading: true, error: null }))
     setSelected(new Set())
+    setWholeQuery(null)
 
     try {
       const result = await api.searchMessages({
@@ -113,9 +121,9 @@ export function MailView({
    * Bulk actions are grouped by account: message IDs are only meaningful
    * against the mailbox they came from, and a merged view mixes them.
    */
-  const byAccount = () => {
+  const groupByAccount = (rows: { accountId: string; gmailMessageId: string }[]) => {
     const groups = new Map<string, string[]>()
-    for (const row of selectedRows) {
+    for (const row of rows) {
       const ids = groups.get(row.accountId) ?? []
       ids.push(row.gmailMessageId)
       groups.set(row.accountId, ids)
@@ -123,13 +131,67 @@ export function MailView({
     return [...groups]
   }
 
+  /**
+   * Expands the selection from this page to everything the search matches.
+   *
+   * The whole point of the product is clearing thousands at once, and a page
+   * holds twenty-five. Rather than paging through and ticking boxes, the
+   * server resolves the query to a real ID list and a real count — which is
+   * also what lets the confirmation state a number instead of a guess.
+   */
+  async function selectWholeQuery() {
+    setResolving(true)
+    setNotice(null)
+
+    try {
+      const targets = accountId
+        ? accounts.filter((account) => account.id === accountId)
+        : accounts
+
+      const resolved = await Promise.all(
+        targets.map(async (account) => ({
+          accountId: account.id,
+          ...(await api.resolveQuery(account.id, query)),
+        })),
+      )
+
+      const rows = resolved.flatMap((result) =>
+        result.messageIds.map((id) => ({
+          accountId: result.accountId,
+          gmailMessageId: id,
+        })),
+      )
+
+      setWholeQuery({
+        rows,
+        // True when any account hit the server's per-action cap. Surfaced
+        // rather than swallowed: otherwise the user believes an action covered
+        // everything when it covered the first 5,000.
+        truncated: resolved.some((result) => result.truncated),
+        limit: resolved[0]?.limit ?? 0,
+      })
+    } catch (caught) {
+      setNotice(
+        caught instanceof ApiRequestError
+          ? caught.message
+          : 'Could not work out how many messages match.',
+      )
+    } finally {
+      setResolving(false)
+    }
+  }
+
+  /** What a bulk action will actually touch. */
+  const targetRows = wholeQuery ? wholeQuery.rows : selectedRows
+  const targetCount = targetRows.length
+
   async function run(action: 'trash' | 'restore' | 'delete', verb: string) {
     setPending(action)
     setNotice(null)
 
     try {
       let total = 0
-      for (const [id, messageIds] of byAccount()) {
+      for (const [id, messageIds] of groupByAccount(targetRows)) {
         if (action === 'trash') await api.trashMessages(id, messageIds)
         else if (action === 'restore') await api.restoreMessages(id, messageIds)
         else await api.deleteForever(id, messageIds)
@@ -137,6 +199,7 @@ export function MailView({
       }
 
       setNotice(`${verb} ${total} message${total === 1 ? '' : 's'}.`)
+      setWholeQuery(null)
       await refresh()
     } catch (caught) {
       setNotice(
@@ -234,7 +297,40 @@ export function MailView({
 
       {selected.size > 0 && (
         <div className="bulkbar">
-          <span>{selected.size} selected</span>
+          <div className="bulkbar__count">
+            <span>
+              {wholeQuery
+                ? `${targetCount} selected — everything matching this search`
+                : `${selected.size} selected on this page`}
+            </span>
+
+            {/*
+              The escape hatch from "this page" to "the whole search". Offered
+              only once the page is fully ticked, which is the moment someone
+              is obviously trying to select more than they can see.
+            */}
+            {!wholeQuery && allSelected && (
+              <button
+                type="button"
+                className="link"
+                disabled={resolving || pending !== null}
+                onClick={() => void selectWholeQuery()}
+              >
+                {resolving ? 'Counting…' : 'Select everything matching this search'}
+              </button>
+            )}
+
+            {wholeQuery && (
+              <button
+                type="button"
+                className="link"
+                disabled={pending !== null}
+                onClick={() => setWholeQuery(null)}
+              >
+                Just this page instead
+              </button>
+            )}
+          </div>
 
           <div className="bulkbar__actions">
             {mode === 'inbox' ? (
@@ -245,7 +341,9 @@ export function MailView({
                 onClick={() => void run('trash', 'Moved to Trash:')}
               >
                 <TrashIcon size={15} />
-                {pending === 'trash' ? 'Moving…' : 'Move to Trash'}
+                {pending === 'trash'
+                  ? 'Moving…'
+                  : `Move ${targetCount} to Trash`}
               </button>
             ) : (
               <>
@@ -255,7 +353,7 @@ export function MailView({
                   disabled={pending !== null}
                   onClick={() => void run('restore', 'Restored')}
                 >
-                  {pending === 'restore' ? 'Restoring…' : 'Restore'}
+                  {pending === 'restore' ? 'Restoring…' : `Restore ${targetCount}`}
                 </button>
 
                 {/* Never one click: opens a type-to-confirm dialog (ADR 0002). */}
@@ -266,12 +364,21 @@ export function MailView({
                   onClick={() => setConfirming(true)}
                 >
                   <TrashIcon size={15} />
-                  Delete forever
+                  Delete {targetCount} forever
                 </button>
               </>
             )}
           </div>
         </div>
+      )}
+
+      {wholeQuery?.truncated && (
+        <p className="mailbox__truncated">
+          <AlertIcon size={15} />
+          This search matches more than {wholeQuery.limit.toLocaleString()}{' '}
+          messages. Only the first {wholeQuery.limit.toLocaleString()} are
+          selected — run the action again afterwards to continue.
+        </p>
       )}
 
       {busy && <MessageListSkeleton />}
@@ -346,7 +453,7 @@ export function MailView({
 
       {confirming && (
         <ConfirmDestructive
-          count={selected.size}
+          count={targetCount}
           busy={pending === 'delete'}
           onCancel={() => setConfirming(false)}
           onConfirm={() => void run('delete', 'Permanently deleted')}
