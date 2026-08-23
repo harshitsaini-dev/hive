@@ -128,3 +128,46 @@ test.describe('theme switching', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   })
 })
+
+/*
+ * The install button used to render nothing unless Chrome had fired
+ * `beforeinstallprompt`. That sounded principled — a button that does nothing
+ * is worse than no button — and meant that on Safari, on Firefox, and on
+ * every iPhone, a feature the app genuinely has appeared not to exist.
+ */
+test.describe('installing Hive', () => {
+  test('the offer is there even without a browser prompt', async ({ page }) => {
+    await page.goto('/')
+
+    const card = page.getByRole('region', { name: 'Install Hive' })
+    await expect(card).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Install Hive' })).toBeVisible()
+  })
+
+  test('explains how, when the browser will not do it in one click', async ({
+    page,
+  }) => {
+    await page.goto('/')
+
+    // Nothing fired `beforeinstallprompt`, which is the normal case outside
+    // Chromium — so the button has to teach rather than fail silently.
+    await page.getByRole('button', { name: 'Install Hive' }).click()
+
+    const guide = page.getByRole('dialog')
+    await expect(guide).toBeVisible()
+    await expect(guide.getByRole('listitem').first()).toBeVisible()
+
+    await guide.getByRole('button', { name: 'Got it' }).click()
+    await expect(guide).toBeHidden()
+  })
+
+  test('Escape closes the instructions', async ({ page }) => {
+    await page.goto('/')
+
+    await page.getByRole('button', { name: 'Install Hive' }).click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toBeHidden()
+  })
+})

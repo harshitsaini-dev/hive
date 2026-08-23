@@ -74,12 +74,34 @@ export function LandingPage({
             <button type="button" onClick={onGetStarted}>
               Get started
             </button>
-            <InstallButton className="btn-outline" />
           </div>
 
           <p className="hint">
             No password to remember — we email you a code when you sign in.
           </p>
+        </section>
+
+        {/*
+          Its own block rather than a third button in a row.
+          Installing is not an alternative to signing in — it is a thing you
+          do as well, and probably later — so putting them side by side asked
+          people to choose between two unrelated actions.
+        */}
+        <section className="installcard" aria-label="Install Hive">
+          <span className="installcard__icon">
+            <HiveMark size={26} />
+          </span>
+
+          <div className="installcard__text">
+            <strong>Use Hive as an app</strong>
+            <span className="hint">
+              Its own window and icon, no tabs or address bar, and it opens
+              straight to your mail. Works offline far enough to tell you it is
+              offline.
+            </span>
+          </div>
+
+          <InstallButton className="installcard__button" label="Install Hive" />
         </section>
 
         <section className="features" aria-label="What Hive does">

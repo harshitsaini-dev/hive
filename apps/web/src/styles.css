@@ -3385,3 +3385,65 @@ a.link-plain {
 .accounts__sends {
   font-size: 0.78rem;
 }
+
+/* ---- install ------------------------------------------------------------- */
+
+.installcard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  margin: 2rem 0;
+  padding: 1.1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.installcard__icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.installcard__text {
+  display: flex;
+  flex: 1 1 16rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.installcard__text .hint {
+  font-size: 0.85rem;
+}
+
+.installcard__button {
+  flex: none;
+}
+
+/* The steps shown when the browser will not install in one click. */
+.install-guide__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+@media (max-width: 34rem) {
+  /* Stacked, with the button full width rather than squeezed beside text. */
+  .installcard__button {
+    width: 100%;
+    justify-content: center;
+  }
+}
