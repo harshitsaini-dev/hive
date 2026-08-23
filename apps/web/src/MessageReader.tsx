@@ -276,6 +276,14 @@ function MessageBody({
  * at once — the combination lets the frame remove its own sandbox. Never do
  * both.
  */
+/**
+ * A remote `<img src="http...">`, captured so it can be set aside.
+ *
+ * Anchored on the tag rather than the attribute alone: a `src` on some other
+ * element is not an image and must not be touched.
+ */
+const REMOTE_IMG = /(<img\b[^>]*?)\ssrc\s*=\s*(["'])(https?:[^"']*)\2/gi
+
 function HtmlFrame({
   html,
   inlineSrc,
@@ -286,6 +294,14 @@ function HtmlFrame({
   // Small enough that a one-line message does not sit in a tall empty box;
   // measurement replaces it as soon as the frame loads.
   const [height, setHeight] = useState(120)
+  /*
+   * Remote images stay blocked until asked for, one message at a time.
+   *
+   * Not a setting, and not remembered: consenting to load a sender's images
+   * is consenting to tell them the message was opened, and that is a decision
+   * about this message rather than a preference about all of them.
+   */
+  const [showRemote, setShowRemote] = useState(false)
 
   /*
    * `cid:` is how a sender embeds a picture in the body: the markup points at
@@ -298,7 +314,7 @@ function HtmlFrame({
    * loading one tells the sender the message was opened, and that is the
    * tracking pixel this app refuses to fire.
    */
-  const resolved = html.replace(
+  const embedded = html.replace(
     /(\ssrc\s*=\s*)(["'])cid:([^"']+)\2/gi,
     (whole, prefix: string, quote: string, contentId: string) => {
       const url = inlineSrc(decodeURIComponent(contentId).trim())
@@ -306,16 +322,38 @@ function HtmlFrame({
     },
   )
 
+  /*
+   * Blocking a remote image is not the same as leaving a broken one.
+   *
+   * The CSP already stopped these loading, which is the point — but the
+   * markup still said "there is a picture here", so a newsletter opened as a
+   * field of grey broken-image icons and looked like Hive had failed to
+   * render it. The `src` is moved aside instead, so the browser never has an
+   * image to fail at, and the count drives an offer to load them properly.
+   */
+  let blocked = 0
+  const resolved = showRemote
+    ? embedded
+    : embedded.replace(
+        REMOTE_IMG,
+        (_whole: string, before: string, quote: string, url: string) => {
+          blocked += 1
+          return `${before} data-blocked=${quote}${url}${quote}`
+        },
+      )
+
   const document = `<!doctype html>
 <html><head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self';">
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self'${showRemote ? ' https:' : ''};">
 <style>
   html, body { margin:0; padding:0; }
   body { padding:14px; font:14px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
          color:#2b2620; background:#fff; overflow-x:hidden; word-break:break-word; }
   img { max-width:100%; height:auto; }
+  /* Nothing to render and nothing to fail at, so no broken-image icon. */
+  img[data-blocked] { display:none; }
   table { max-width:100% !important; }
   a { pointer-events:none; color:inherit; }
 </style>
@@ -339,6 +377,23 @@ function HtmlFrame({
   }
 
   return (
+    <>
+      {blocked > 0 && (
+        <div className="reader__blocked">
+          <span className="hint">
+            {blocked} image{blocked === 1 ? '' : 's'} not loaded. Fetching them
+            tells the sender you opened this.
+          </span>
+          <button
+            type="button"
+            className="btn-quiet"
+            onClick={() => setShowRemote(true)}
+          >
+            Show images
+          </button>
+        </div>
+      )}
+
     <iframe
       className="reader__frame"
       title="Message content"
@@ -349,5 +404,6 @@ function HtmlFrame({
       // changes the height after this fires.
       onLoad={(event) => measure(event.currentTarget)}
     />
+    </>
   )
 }

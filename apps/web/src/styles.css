@@ -3639,3 +3639,21 @@ a.link-plain {
     display: none;
   }
 }
+
+/* The offer to load a sender's images, above the frame that is not loading them. */
+.reader__blocked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.reader__blocked .hint {
+  flex: 1 1 12rem;
+  font-size: 0.78rem;
+}

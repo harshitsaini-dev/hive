@@ -265,7 +265,9 @@ test.describe('images embedded in the body', () => {
    * turn into rewriting everything — a remote image loading is what tells the
    * sender the message was opened.
    */
-  test('a remote image is not rewritten and does not load', async ({ page }) => {
+  test('a remote image does not load, and leaves nothing broken', async ({
+    page,
+  }) => {
     let requested = false
     await page.route('https://tracker.example.test/**', (route) => {
       requested = true
@@ -283,11 +285,56 @@ test.describe('images embedded in the body', () => {
 
     await openMessage(page)
 
+    /*
+     * The `src` is moved aside rather than left to fail. The CSP blocked
+     * these already — but the markup still said "there is a picture here", so
+     * a newsletter opened as a field of grey broken-image icons and looked
+     * like Hive could not render it.
+     */
     const pixel = page.frameLocator('.reader__frame').locator('img')
     await expect(pixel).toHaveAttribute(
-      'src',
+      'data-blocked',
       'https://tracker.example.test/pixel.png',
     )
+    await expect(pixel).toBeHidden()
     expect(requested).toBe(false)
+  })
+
+  test('offers to load them, and only then does', async ({ page }) => {
+    let requested = false
+    await page.route('https://tracker.example.test/**', (route) => {
+      requested = true
+      route.fulfill({ status: 200, contentType: 'image/png', body: PNG })
+    })
+
+    await stub(
+      page,
+      baseMessage({
+        text: null,
+        html:
+          '<img src="https://tracker.example.test/a.png" alt="a">' +
+          '<img src="https://tracker.example.test/b.png" alt="b">',
+        attachments: [],
+      }),
+    )
+
+    await openMessage(page)
+    await expect(page.getByText('2 images not loaded')).toBeVisible()
+    expect(requested).toBe(false)
+
+    await page.getByRole('button', { name: 'Show images' }).click()
+
+    // Asked for, so fetched — and the notice goes with the reason for it.
+    await expect
+      .poll(() =>
+        page
+          .frameLocator('.reader__frame')
+          .locator('img')
+          .first()
+          .evaluate((img: HTMLImageElement) => img.naturalWidth),
+      )
+      .toBeGreaterThan(0)
+    expect(requested).toBe(true)
+    await expect(page.getByText(/images not loaded/)).toBeHidden()
   })
 })
