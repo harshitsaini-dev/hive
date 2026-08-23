@@ -1082,14 +1082,20 @@ messagesRouter.post(
 
     const result = await withGmail(user.id, accountId, async (session) => {
       /*
-       * The display name Gmail itself uses. Without it, mail sent through Hive
-       * shows a bare address while the same person's mail sent from Gmail
-       * shows their name — the two look like different senders.
+       * The name this mail is sent under.
+       *
+       * What Hive was told, if anything, and otherwise what Gmail reports for
+       * this address. Without either, mail sent through Hive shows a bare
+       * address while the same person's mail sent from Gmail shows their
+       * name — the two look like different senders, and recipients saw the
+       * local part of the address where a person should have been.
        */
-      const displayName = await getSendAsDisplayName(
-        session.accessToken,
-        session.account.gmail_address,
-      )
+      const displayName =
+        session.account.display_name ||
+        (await getSendAsDisplayName(
+          session.accessToken,
+          session.account.gmail_address,
+        ))
 
       const raw = buildRawMessage({
         // The From address is the connected mailbox, never client-supplied —

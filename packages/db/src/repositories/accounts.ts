@@ -9,6 +9,8 @@ export interface AccountRow {
   status: 'active' | 'reauth_required'
   history_id: string | null
   last_synced_at: string | null
+  /** Overrides the name Gmail reports. Null means "ask Gmail". */
+  display_name: string | null
   connected_at: string
 }
 
@@ -128,4 +130,22 @@ export async function deleteAccount(
     args: [accountId, ownerId],
   })
   return result.rowsAffected === 1
+}
+
+/**
+ * The name mail from this account is sent under, when Hive has been told one.
+ *
+ * Null means "ask Gmail", which is the default and usually right. It exists
+ * because "usually" is not "always": an alias with no display name makes
+ * Gmail fall back to the local part of the address, and recipients see
+ * `harshitsaini.dev` instead of a person.
+ */
+export async function setAccountDisplayName(
+  accountId: string,
+  displayName: string | null,
+): Promise<void> {
+  await db().execute({
+    sql: 'UPDATE connected_accounts SET display_name = ? WHERE id = ?',
+    args: [displayName, accountId],
+  })
 }

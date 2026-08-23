@@ -69,6 +69,11 @@ export interface ConnectedAccount {
   status: AccountStatus
   connectedAt: string
   lastSyncedAt: string | null
+  /**
+   * The name mail from this account is sent under, when Hive has been told
+   * one. Null means it asks Gmail, which is the default and usually right.
+   */
+  displayName?: string | null
   sync?: SyncProgress
 }
 

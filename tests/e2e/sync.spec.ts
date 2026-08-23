@@ -212,3 +212,74 @@ test.describe('index progress', () => {
     expect(seen.syncCalls).toEqual([])
   })
 })
+
+/*
+ * Reported: mail sent through Hive arrived as `harshitsaini.dev` where a name
+ * should have been. Hive asks Gmail for the display name on the matching
+ * `sendAs` alias, which is the right answer when there is one — and an alias
+ * with no name of its own makes Gmail fall back to the local part of the
+ * address. There is nothing to infer harder about; the person knows what they
+ * want to be called.
+ */
+test.describe('the name on outgoing mail', () => {
+  test('says what recipients will see, and lets it be set', async ({ page }) => {
+    const saved: unknown[] = []
+
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'u1', email: 'tester@example.test' },
+        }),
+      }),
+    )
+
+    let displayName: string | null = null
+    await page.route('**/api/accounts', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accounts: [{ ...BASE, displayName }] }),
+      }),
+    )
+    await page.route('**/api/messages?**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: [],
+          nextPageToken: null,
+          accounts: [],
+          skipped: [],
+        }),
+      }),
+    )
+    await page.route('**/api/accounts/*/display-name', (route) => {
+      const body = route.request().postDataJSON() as { displayName: string }
+      saved.push(body)
+      displayName = body.displayName || null
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ displayName }),
+      })
+    })
+
+    await openAccounts(page)
+
+    // Before: no promise is made beyond "whatever Gmail has".
+    await expect(
+      page.getByText('Sends under the name set in Gmail for this address'),
+    ).toBeVisible()
+
+    await page.getByRole('button', { name: 'Set name' }).click()
+    await page.getByLabel('Display name').fill('Harshit')
+    await page.getByRole('button', { name: 'Save' }).click()
+
+    expect(saved).toEqual([{ displayName: 'Harshit' }])
+    await expect(
+      page.getByText('Sends as Harshit <first@example.test>'),
+    ).toBeVisible()
+  })
+})

@@ -5,6 +5,7 @@ import {
   findAccountForOwner,
   listAccountsForOwner,
   listSyncStates,
+  setAccountDisplayName,
   updateSyncState,
   upsertAccount,
   writeAuditEntry,
@@ -46,6 +47,7 @@ function toApiShape(row: {
   status: 'active' | 'reauth_required'
   connected_at: string
   last_synced_at: string | null
+  display_name: string | null
 }): ConnectedAccount {
   return {
     id: row.id,
@@ -53,6 +55,7 @@ function toApiShape(row: {
     status: row.status,
     connectedAt: row.connected_at,
     lastSyncedAt: row.last_synced_at,
+    displayName: row.display_name,
   }
 }
 
@@ -88,6 +91,44 @@ accountsRouter.get(
         }
       }),
     })
+  }),
+)
+
+/**
+ * PUT /accounts/:id/display-name — the name mail from here is sent under.
+ *
+ * Empty clears it, and Hive goes back to asking Gmail. That is the default
+ * and usually right; this exists because "usually" is not "always" — an alias
+ * with no display name of its own makes Gmail fall back to the local part of
+ * the address, and recipients see `harshitsaini.dev` instead of a person.
+ */
+accountsRouter.put(
+  '/:id/display-name',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const parsed = z
+      .object({ displayName: z.string().max(120) })
+      .safeParse(req.body)
+    if (!parsed.success) throw badRequest('A display name is required')
+
+    const account = await findAccountForOwner(
+      req.params.id ?? '',
+      authed(req).user.id,
+    )
+    if (!account) throw notFound('No such account')
+
+    /*
+     * Header-unsafe characters are stripped rather than rejected. This value
+     * goes into a `From:` header, and a newline in one is header injection —
+     * the same guard `buildRawMessage` applies, applied earlier so nothing
+     * unusable is ever stored.
+     */
+    const cleaned = parsed.data.displayName
+      .replace(/[\r\n]+/g, ' ')
+      .trim()
+
+    await setAccountDisplayName(account.id, cleaned || null)
+    res.json({ displayName: cleaned || null })
   }),
 )
 

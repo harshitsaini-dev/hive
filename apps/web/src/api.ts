@@ -342,6 +342,16 @@ export const api = {
       method: 'POST',
     }),
 
+  /**
+   * The name mail from this account is sent under. Empty clears it and Hive
+   * goes back to asking Gmail.
+   */
+  setDisplayName: (accountId: string, displayName: string) =>
+    request<{ displayName: string | null }>(
+      `/accounts/${accountId}/display-name`,
+      { method: 'PUT', body: JSON.stringify({ displayName }) },
+    ),
+
   /** Turns the hourly background sweep on or off for one mailbox. */
   setIndexing: (accountId: string, paused: boolean) =>
     request<{ paused: boolean }>(`/accounts/${accountId}/indexing`, {

@@ -3381,3 +3381,7 @@ a.link-plain {
   flex: none;
   margin-top: 0.15rem;
 }
+
+.accounts__sends {
+  font-size: 0.78rem;
+}

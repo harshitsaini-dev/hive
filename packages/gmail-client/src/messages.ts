@@ -579,7 +579,20 @@ export async function getSendAsDisplayName(
 ): Promise<string | null> {
   try {
     const response = await gmailFetch(accessToken, '/users/me/settings/sendAs')
-    if (!response.ok) return null
+
+    if (!response.ok) {
+      /*
+       * Logged rather than swallowed. This used to return null on any
+       * failure, which is indistinguishable from "the alias has no name" —
+       * and both end with recipients seeing a bare address, with nothing
+       * anywhere saying which happened or why.
+       */
+      console.warn(
+        `sendAs lookup failed (${response.status}):`,
+        (await response.text().catch(() => '')).slice(0, 200),
+      )
+      return null
+    }
 
     const body = (await response.json()) as {
       sendAs?: { sendAsEmail?: string; displayName?: string; isDefault?: boolean }[]
@@ -604,8 +617,13 @@ export async function getSendAsDisplayName(
       exact?.displayName?.trim() ||
       aliases.find((alias) => alias.isDefault)?.displayName?.trim()
 
+    if (!named) {
+      console.warn(`no sendAs display name for ${emailAddress}`)
+    }
+
     return named || null
-  } catch {
+  } catch (error) {
+    console.warn('sendAs lookup threw:', error)
     return null
   }
 }
