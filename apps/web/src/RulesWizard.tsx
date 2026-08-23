@@ -9,6 +9,7 @@ import {
   MailFilters,
   type Filters,
 } from './MailFilters.js'
+import { Select } from './Select.js'
 
 /**
  * Building a cleanup rule, one decision at a time.
@@ -128,18 +129,16 @@ export function RulesWizard({
 
           {accounts.length > 1 && (
             <>
-              <label htmlFor="wizard-account">Account</label>
-              <select
-                id="wizard-account"
+              <span className="formlabel">Account</span>
+              <Select
+                label="Account"
                 value={accountId}
-                onChange={(event) => setAccountId(event.target.value)}
-              >
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.gmailAddress}
-                  </option>
-                ))}
-              </select>
+                options={accounts.map((account) => ({
+                  value: account.id,
+                  label: account.gmailAddress,
+                }))}
+                onChange={setAccountId}
+              />
             </>
           )}
 

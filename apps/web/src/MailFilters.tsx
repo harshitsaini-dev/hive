@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { SearchIcon } from './Icons.js'
+import { Select } from './Select.js'
 
 /**
  * The filter controls, and the Gmail query they compile to.
@@ -144,39 +145,21 @@ export function MailFilters({
           onChange={(event) => set('from', event.target.value)}
         />
 
-        <label htmlFor="f-age" className="sr-only">
-          Age
-        </label>
-        <select
+        <Select
           id="f-age"
+          label="Age"
           value={filters.olderThan}
-          onChange={(event) =>
-            set('olderThan', event.target.value as Filters['olderThan'])
-          }
-        >
-          {OLDER_THAN.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={OLDER_THAN}
+          onChange={(next) => set('olderThan', next)}
+        />
 
-        <label htmlFor="f-category" className="sr-only">
-          Category
-        </label>
-        <select
+        <Select
           id="f-category"
+          label="Category"
           value={filters.category}
-          onChange={(event) =>
-            set('category', event.target.value as Filters['category'])
-          }
-        >
-          {CATEGORIES.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={CATEGORIES}
+          onChange={(next) => set('category', next)}
+        />
       </div>
 
       <div className="filters__row filters__row--toggles">

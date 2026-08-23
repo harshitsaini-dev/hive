@@ -11,6 +11,7 @@ import {
   type Filters,
 } from '../MailFilters.js'
 import { MessageReader } from '../MessageReader.js'
+import { Select } from '../Select.js'
 import { MessageListSkeleton } from '../Skeleton.js'
 
 /**
@@ -83,6 +84,11 @@ export function MailView({
     limit: number
   } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** Live progress for a background bulk action. */
+  const [progress, setProgress] = useState<{
+    processed: number
+    total: number
+  } | null>(null)
   /** The message open in the reading pane, if any. */
   const [reading, setReading] = useState<{
     accountId: string
@@ -247,17 +253,57 @@ export function MailView({
   const targetRows = wholeQuery ? wholeQuery.rows : selectedRows
   const targetCount = targetRows.length
 
+  /**
+   * Polls a background job until it stops running.
+   *
+   * Polling rather than a socket: Vercel proxies `/api` to Render and does not
+   * carry WebSocket upgrades, so a socket would have to be cross-origin — and
+   * a `SameSite=Lax` session cookie does not go with one. See the note in
+   * apps/server/src/jobs.ts.
+   */
+  async function watchJob(jobId: string, alreadyDone: number, total: number) {
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+
+      const job = await api.getJob(jobId)
+      setProgress({ processed: alreadyDone + job.processed, total })
+
+      if (job.status === 'failed') throw new Error(job.error ?? 'That did not finish.')
+      if (job.status === 'done') return job.processed
+    }
+  }
+
   async function run(action: 'trash' | 'restore' | 'delete', verb: string) {
     setPending(action)
     setNotice(null)
 
+    /*
+     * Small selections stay synchronous. Below this, the work finishes faster
+     * than the first poll would arrive, so a progress bar would flash rather
+     * than inform.
+     */
+    const useJob = targetRows.length > 200
+    if (useJob) setProgress({ processed: 0, total: targetRows.length })
+
     try {
       let total = 0
+
       for (const [id, messageIds] of groupByAccount(targetRows)) {
-        if (action === 'trash') await api.trashMessages(id, messageIds)
-        else if (action === 'restore') await api.restoreMessages(id, messageIds)
-        else await api.deleteForever(id, messageIds)
+        const call =
+          action === 'trash'
+            ? api.trashMessages
+            : action === 'restore'
+              ? api.restoreMessages
+              : api.deleteForever
+
+        const result = await call(id, messageIds, useJob)
+
+        if (result.jobId) {
+          await watchJob(result.jobId, total, targetRows.length)
+        }
+
         total += messageIds.length
+        if (useJob) setProgress({ processed: total, total: targetRows.length })
       }
 
       setNotice(`${verb} ${total} message${total === 1 ? '' : 's'}.`)
@@ -265,11 +311,16 @@ export function MailView({
       await refresh()
     } catch (caught) {
       setNotice(
-        caught instanceof ApiRequestError ? caught.message : `Could not ${action}.`,
+        caught instanceof ApiRequestError
+          ? caught.message
+          : caught instanceof Error
+            ? caught.message
+            : `Could not ${action}.`,
       )
     } finally {
       setPending(null)
       setConfirming(false)
+      setProgress(null)
     }
   }
 
@@ -308,21 +359,19 @@ export function MailView({
 
         {accounts.length > 1 && (
           <div className="filters__row">
-            <label htmlFor="account" className="sr-only">
-              Account
-            </label>
-            <select
+            <Select
               id="account"
+              label="Account"
               value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-            >
-              <option value="">All accounts</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.gmailAddress}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'All accounts' },
+                ...accounts.map((account) => ({
+                  value: account.id,
+                  label: account.gmailAddress,
+                })),
+              ]}
+              onChange={setAccountId}
+            />
           </div>
         )}
       </div>
@@ -414,6 +463,32 @@ export function MailView({
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {progress && (
+        <div className="progress" role="status" aria-live="polite">
+          <div className="progress__label">
+            <span>Working through your selection…</span>
+            <span>
+              {progress.processed.toLocaleString()} of{' '}
+              {progress.total.toLocaleString()}
+            </span>
+          </div>
+          <div
+            className="progress__track"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progress.total}
+            aria-valuenow={progress.processed}
+          >
+            <div
+              className="progress__bar"
+              style={{
+                width: `${Math.round((progress.processed / Math.max(progress.total, 1)) * 100)}%`,
+              }}
+            />
           </div>
         </div>
       )}

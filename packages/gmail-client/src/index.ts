@@ -211,5 +211,6 @@ export function isHistoryUsable(lastSyncedAt: Date | null, now = new Date()): bo
 }
 
 export * from './concurrency.js'
+export * from './batch.js'
 export * from './messages.js'
 export * from './parse.js'

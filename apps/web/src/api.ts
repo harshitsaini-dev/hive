@@ -89,6 +89,18 @@ export interface ParsedMessage {
   attachments: MessageAttachment[]
 }
 
+export interface BulkJob {
+  id: string
+  action: 'trash' | 'restore' | 'delete_forever'
+  total: number
+  processed: number
+  status: 'running' | 'done' | 'failed'
+  error: string | null
+}
+
+/** A bulk call answers with a job when it was asked to run in the background. */
+export type BulkResult = { jobId: string } | { done: number }
+
 export interface CleanupRule {
   id: string
   accountId: string
@@ -188,28 +200,36 @@ export const api = {
     return `/api/messages/${messageId}/attachments/${attachmentId}?${params.toString()}`
   },
 
-  trashMessages: (accountId: string, messageIds: string[]) =>
-    request<{ trashed: number }>('/messages/trash', {
+  /**
+   * With `background`, the server answers with a job id and keeps working —
+   * the only way to show progress, since a synchronous response arrives once,
+   * at the end.
+   */
+  trashMessages: (accountId: string, messageIds: string[], background = false) =>
+    request<{ trashed?: number; jobId?: string }>('/messages/trash', {
       method: 'POST',
-      body: JSON.stringify({ accountId, messageIds }),
+      body: JSON.stringify({ accountId, messageIds, background }),
     }),
 
-  restoreMessages: (accountId: string, messageIds: string[]) =>
-    request<{ restored: number }>('/messages/restore', {
+  restoreMessages: (accountId: string, messageIds: string[], background = false) =>
+    request<{ restored?: number; jobId?: string }>('/messages/restore', {
       method: 'POST',
-      body: JSON.stringify({ accountId, messageIds }),
+      body: JSON.stringify({ accountId, messageIds, background }),
     }),
+
+  getJob: (id: string) => request<BulkJob>(`/messages/jobs/${id}`),
 
   /**
    * Irreversible. The confirmation phrase is required by the server too, so no
    * client can reach this endpoint by reshaping a trash request.
    */
-  deleteForever: (accountId: string, messageIds: string[]) =>
-    request<{ deleted: number }>('/messages/delete-forever', {
+  deleteForever: (accountId: string, messageIds: string[], background = false) =>
+    request<{ deleted?: number; jobId?: string }>('/messages/delete-forever', {
       method: 'POST',
       body: JSON.stringify({
         accountId,
         messageIds,
+        background,
         confirm: 'permanently delete',
       }),
     }),

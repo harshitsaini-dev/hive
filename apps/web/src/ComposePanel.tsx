@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from './api.js'
 import { PaperclipIcon, SendIcon } from './Icons.js'
+import { Select } from './Select.js'
 
 /**
  * Gmail refuses anything over 25 MB, and base64 inflates bytes by about a
@@ -123,18 +124,16 @@ export function ComposePanel({ accounts }: { accounts: ConnectedAccount[] }) {
       </div>
 
       <form className="compose__form" onSubmit={send}>
-          <label htmlFor="compose-from">From</label>
-          <select
-            id="compose-from"
+          <span className="formlabel">From</span>
+          <Select
+            label="From"
             value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          >
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.gmailAddress}
-              </option>
-            ))}
-          </select>
+            options={accounts.map((account) => ({
+              value: account.id,
+              label: account.gmailAddress,
+            }))}
+            onChange={setAccountId}
+          />
 
           <label htmlFor="compose-to">To</label>
           <input

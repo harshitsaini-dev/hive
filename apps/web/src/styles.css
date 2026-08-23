@@ -487,7 +487,6 @@ body {
  * base rule already inherits 16px; this guards against a future override.
  */
 input,
-select,
 textarea {
   font-size: max(16px, 1rem);
 }
@@ -696,15 +695,6 @@ textarea {
 .search-field:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-select {
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--bg);
-  color: inherit;
-  font: inherit;
 }
 
 .mailbox__syntax {
@@ -1136,7 +1126,14 @@ textarea:focus-visible {
   padding-bottom: max(4rem, env(safe-area-inset-bottom));
 }
 
-.app__menu {
+/*
+ * The drawer toggle only exists below the breakpoint where the sidebar
+ * collapses. Written as `button.app__menu` deliberately: the element also
+ * carries `.link`, and the later ghost-button rule sets `display: inline-flex`
+ * on `button.link`. A bare `.app__menu` loses that specificity contest, which
+ * is exactly how a dead "Menu" button ended up on desktop.
+ */
+button.app__menu {
   display: none;
 }
 
@@ -1169,7 +1166,7 @@ textarea:focus-visible {
    * a drawer toggled from the bar. Hidden with display:none rather than a
    * transform so its buttons leave the tab order entirely while closed.
    */
-  .app__menu {
+  button.app__menu {
     display: inline-flex;
     order: -1;
   }
@@ -1443,7 +1440,6 @@ button.link:active:not(:disabled) {
 /* --- recessed: things you type into -------------------------------------- */
 
 input,
-select,
 textarea,
 .search-field {
   border: 0;
@@ -2503,4 +2499,129 @@ a.link-plain {
 .btn-quiet:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ---- custom select ------------------------------------------------------- */
+
+.select {
+  position: relative;
+  display: inline-block;
+}
+
+.select__button {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+}
+
+.select__button:active:not(:disabled) {
+  transform: none;
+}
+
+.select__button svg {
+  color: var(--muted);
+}
+
+.select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The whole reason this component exists: a native option list is drawn by
+ * the OS and ignores the theme completely, so a dark app pops a white menu.
+ */
+.select__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  min-width: 100%;
+  max-height: 16rem;
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  list-style: none;
+}
+
+.select__option {
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 0.92rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Highlight follows the keyboard as well as the pointer. */
+.select__option[data-active='true'] {
+  background: var(--surface-2);
+}
+
+.select__option[aria-selected='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- bulk progress ------------------------------------------------------- */
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.progress__label {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.progress__label span:last-child {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__track {
+  height: 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: width 300ms var(--ease-clay);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress__bar {
+    transition: none;
+  }
 }

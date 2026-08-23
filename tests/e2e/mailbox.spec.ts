@@ -382,3 +382,101 @@ test.describe('selecting a whole search', () => {
     ).toHaveLength(137)
   })
 })
+
+/**
+ * Progress on a large bulk action.
+ *
+ * The server keeps working after the response goes out and the client polls a
+ * job — the only shape that works here, because Vercel proxies /api to Render
+ * and does not carry WebSocket upgrades.
+ */
+test.describe('bulk progress', () => {
+  test('polls a job and reports progress for a large selection', async ({
+    page,
+  }) => {
+    await stubApi(page)
+
+    // A query that resolves to more than the synchronous threshold.
+    await page.route('**/api/messages/resolve-query', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messageIds: Array.from({ length: 900 }, (_, i) => 'big-' + i),
+          count: 900,
+          truncated: false,
+          limit: 5000,
+        }),
+      }),
+    )
+
+    let trashBody: { background?: boolean } | null = null
+    await page.route('**/api/messages/trash', (route) => {
+      trashBody = route.request().postDataJSON()
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobId: 'job-1' }),
+      })
+    })
+
+    let polls = 0
+    await page.route('**/api/messages/jobs/job-1', (route) => {
+      polls += 1
+      const processed = polls === 1 ? 400 : 900
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'job-1',
+          action: 'trash',
+          total: 900,
+          processed,
+          status: polls === 1 ? 'running' : 'done',
+          error: null,
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await page.getByLabel(/Select all 3/).check()
+    await page
+      .getByRole('button', { name: /Select everything matching this search/ })
+      .click()
+    await expect(page.getByText(/900 selected/)).toBeVisible()
+
+    await page.getByRole('button', { name: /Move 900 to Trash/ }).click()
+
+    // The bar reports the job's own count, not a guess.
+    await expect(page.getByRole('progressbar')).toBeVisible()
+    await expect(page.getByText(/400 of 900/)).toBeVisible()
+
+    await expect(page.getByText(/Moved to Trash: 900/)).toBeVisible()
+    // Large selections ask for a job; small ones must not. The re-routed
+    // handler above owns the counting here, not the shared stub.
+    expect(trashBody?.background).toBe(true)
+  })
+
+  test('a small selection stays synchronous', async ({ page }) => {
+    await stubApi(page)
+
+    let body: { background?: boolean } | null = null
+    await page.route('**/api/messages/trash', (route) => {
+      body = route.request().postDataJSON()
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ trashed: 3 }),
+      })
+    })
+
+    await page.goto('/')
+    await page.getByLabel(/Select all 3/).check()
+    await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
+
+    await expect(page.getByText(/Moved to Trash: 3/)).toBeVisible()
+    // No job, so no progress bar to flash on screen.
+    await expect(page.getByRole('progressbar')).toBeHidden()
+    expect(body?.background).toBe(false)
+  })
+})

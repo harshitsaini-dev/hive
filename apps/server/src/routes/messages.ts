@@ -3,13 +3,12 @@ import { z } from 'zod'
 import { listAccountsForOwner, writeAuditEntry } from '@hive/db'
 import {
   buildRawMessage,
+  fetchMessagesMetadata,
   getAttachment,
   getSendAsDisplayName,
-  mapWithConcurrency,
   parseMessage,
   type RawFullMessage,
   getMessageFull,
-  getMessageMetadata,
   listAllMessageIds,
   listMessages,
   permanentlyDeleteMessages,
@@ -18,7 +17,8 @@ import {
   trashMessages,
   untrashMessages,
 } from '@hive/gmail-client'
-import { asyncRoute, badRequest, HttpError } from '../errors.js'
+import { asyncRoute, badRequest, HttpError, notFound } from '../errors.js'
+import { advanceJob, createJob, finishJob, getJob } from '../jobs.js'
 import { authed, requireAuth } from '../middleware/auth.js'
 import { scopeMissing, withGmail } from '../gmail.js'
 
@@ -36,7 +36,8 @@ const MAX_BULK = 5000
 /**
  * A page can be large — the point of the product is working through thousands
  * — but every message costs a separate metadata fetch, so the ceiling is a
- * real one rather than a formality. See PAGE_CONCURRENCY below.
+ * real one rather than a formality: each batch carries a hundred, so a full
+ * page is five requests to Gmail.
  */
 const MAX_PAGE_SIZE = 500
 
@@ -78,18 +79,15 @@ function encodeCursors(cursors: Record<string, string>): string | null {
   )
 }
 
-/**
- * How many message-metadata fetches run at once, per account.
- *
- * Gmail meters roughly 250 quota units a second per user and a metadata fetch
- * costs 5, so about 50 a second is the ceiling before it starts refusing.
- * Twenty in flight keeps latency low without walking into 429s.
- */
-const PAGE_CONCURRENCY = 20
-
 const bulkSchema = z.object({
   accountId: z.string().min(1),
   messageIds: z.array(z.string().min(1)).min(1).max(MAX_BULK),
+  /**
+   * Return a job id immediately and keep working, so the client can show
+   * progress. Small selections stay synchronous, where a job would be pure
+   * overhead.
+   */
+  background: z.boolean().default(false),
 })
 
 const bulkQuerySchema = z.object({
@@ -151,12 +149,11 @@ messagesRouter.get(
               maxResults: pageSize,
             })
 
-            // Concurrency-limited: a page of 500 fired at once collects 429s
-            // from Gmail rather than messages.
-            const messages = await mapWithConcurrency(
-              page.messages,
-              PAGE_CONCURRENCY,
-              (ref) => getMessageMetadata(session.accessToken, ref.id),
+            // One batch request per hundred messages rather than one per
+            // message: a page of 500 is five round trips instead of 500.
+            const messages = await fetchMessagesMetadata(
+              session.accessToken,
+              page.messages.map((ref) => ref.id),
             )
 
             return {
@@ -306,6 +303,95 @@ messagesRouter.post(
   }),
 )
 
+/**
+ * Runs a bulk action, optionally in the background with a progress job.
+ *
+ * Synchronous by default: for a handful of messages the round trip is shorter
+ * than the poll interval would be, and a job would be pure overhead. With
+ * `background: true` the response returns a job id straight away and the work
+ * continues — which is the only way a progress bar can exist, since the
+ * response of a synchronous call arrives once, at the end.
+ */
+async function runBulkAction(options: {
+  ownerId: string
+  accountId: string
+  messageIds: string[]
+  action: 'trash' | 'restore' | 'delete_forever'
+  background: boolean
+  work: (
+    accessToken: string,
+    onProgress: (processed: number) => void,
+  ) => Promise<void>
+  audit: (accountId: string) => Promise<unknown>
+}): Promise<{ jobId: string } | { processed: number }> {
+  const { ownerId, accountId, messageIds, action, background, work, audit } =
+    options
+
+  if (!background) {
+    await withGmail(ownerId, accountId, async (session) => {
+      await audit(session.account.id)
+      await work(session.accessToken, () => {})
+    })
+    return { processed: messageIds.length }
+  }
+
+  const job = createJob(ownerId, action, messageIds.length)
+
+  /*
+   * Deliberately not awaited — the response goes out now and the client polls.
+   * Every path inside is wrapped, because an unhandled rejection here would
+   * take the process down rather than fail one job.
+   */
+  void (async () => {
+    try {
+      await withGmail(ownerId, accountId, async (session) => {
+        await audit(session.account.id)
+        await work(session.accessToken, (processed) =>
+          advanceJob(job.id, processed),
+        )
+      })
+      finishJob(job.id)
+    } catch (error) {
+      console.error(`bulk ${action} failed:`, error)
+      finishJob(
+        job.id,
+        error instanceof HttpError
+          ? error.message
+          : 'That did not finish. Some messages may already have been processed.',
+      )
+    }
+  })()
+
+  return { jobId: job.id }
+}
+
+/**
+ * GET /messages/jobs/:id — progress for a background bulk action.
+ *
+ * Polled by the client. Ownership is enforced inside getJob, so a job id
+ * cannot be used to watch someone else's mailbox activity.
+ */
+messagesRouter.get(
+  '/jobs/:id',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const id = req.params.id
+    if (!id) throw badRequest('Missing job id')
+
+    const job = getJob(authed(req).user.id, id)
+    if (!job) throw notFound('No such job')
+
+    res.json({
+      id: job.id,
+      action: job.action,
+      total: job.total,
+      processed: job.processed,
+      status: job.status,
+      error: job.error,
+    })
+  }),
+)
+
 /** POST /messages/trash — reversible. The default for every bulk cleanup. */
 messagesRouter.post(
   '/trash',
@@ -317,22 +403,26 @@ messagesRouter.post(
     }
 
     const { user } = authed(req)
-    const { accountId, messageIds } = parsed.data
+    const { accountId, messageIds, background } = parsed.data
 
-    const result = await withGmail(user.id, accountId, async (session) => {
-      await trashMessages(session.accessToken, messageIds)
-
-      await writeAuditEntry({
-        userId: user.id,
-        accountId: session.account.id,
-        action: 'trash',
-        details: { count: messageIds.length },
-      })
-
-      return { trashed: messageIds.length }
+    const result = await runBulkAction({
+      ownerId: user.id,
+      accountId,
+      messageIds,
+      action: 'trash',
+      background,
+      work: (accessToken, onProgress) =>
+        trashMessages(accessToken, messageIds, onProgress),
+      audit: (id) =>
+        writeAuditEntry({
+          userId: user.id,
+          accountId: id,
+          action: 'trash',
+          details: { count: messageIds.length },
+        }),
     })
 
-    res.json(result)
+    res.json('jobId' in result ? result : { trashed: result.processed })
   }),
 )
 
@@ -345,22 +435,26 @@ messagesRouter.post(
     if (!parsed.success) throw badRequest('Provide accountId and messageIds')
 
     const { user } = authed(req)
-    const { accountId, messageIds } = parsed.data
+    const { accountId, messageIds, background } = parsed.data
 
-    const result = await withGmail(user.id, accountId, async (session) => {
-      await untrashMessages(session.accessToken, messageIds)
-
-      await writeAuditEntry({
-        userId: user.id,
-        accountId: session.account.id,
-        action: 'restore',
-        details: { count: messageIds.length },
-      })
-
-      return { restored: messageIds.length }
+    const result = await runBulkAction({
+      ownerId: user.id,
+      accountId,
+      messageIds,
+      action: 'restore',
+      background,
+      work: (accessToken, onProgress) =>
+        untrashMessages(accessToken, messageIds, onProgress),
+      audit: (id) =>
+        writeAuditEntry({
+          userId: user.id,
+          accountId: id,
+          action: 'restore',
+          details: { count: messageIds.length },
+        }),
     })
 
-    res.json(result)
+    res.json('jobId' in result ? result : { restored: result.processed })
   }),
 )
 
@@ -391,29 +485,44 @@ messagesRouter.post(
     }
 
     const { user } = authed(req)
-    const { accountId, messageIds } = parsed.data
+    const { accountId, messageIds, background } = parsed.data
 
-    const result = await withGmail(user.id, accountId, async (session) => {
+    /*
+     * The scope is checked before anything is started, not inside the
+     * background worker. A permanent delete that fails halfway is the worst
+     * possible outcome here, and refusing up front is the one guard that
+     * cannot be missed by a client polling a job it never sees fail.
+     */
+    await withGmail(user.id, accountId, async (session) => {
       if (!session.canDeleteForever) throw scopeMissing()
-
-      await writeAuditEntry({
-        userId: user.id,
-        accountId: session.account.id,
-        action: 'delete_forever',
-        details: { count: messageIds.length },
-      })
-
-      try {
-        await permanentlyDeleteMessages(session.accessToken, messageIds)
-      } catch (error) {
-        if (error instanceof ScopeNotGrantedError) throw scopeMissing()
-        throw error
-      }
-
-      return { deleted: messageIds.length }
     })
 
-    res.json(result)
+    const result = await runBulkAction({
+      ownerId: user.id,
+      accountId,
+      messageIds,
+      action: 'delete_forever',
+      background,
+      // Written before the Gmail call, so a partial failure still leaves a
+      // record of what was attempted. See ADR 0002.
+      audit: (id) =>
+        writeAuditEntry({
+          userId: user.id,
+          accountId: id,
+          action: 'delete_forever',
+          details: { count: messageIds.length },
+        }),
+      work: async (accessToken, onProgress) => {
+        try {
+          await permanentlyDeleteMessages(accessToken, messageIds, onProgress)
+        } catch (error) {
+          if (error instanceof ScopeNotGrantedError) throw scopeMissing()
+          throw error
+        }
+      },
+    })
+
+    res.json('jobId' in result ? result : { deleted: result.processed })
   }),
 )
 
