@@ -17,6 +17,10 @@ export interface Filters {
   from: string
   olderThan: '' | '7d' | '30d' | '90d' | '1y'
   category: '' | 'promotions' | 'social' | 'updates' | 'forums'
+  /** Inclusive start of a custom date range, as `YYYY-MM-DD`. */
+  after: string
+  /** Inclusive end of a custom date range, as `YYYY-MM-DD`. */
+  before: string
   hasAttachment: boolean
   unreadOnly: boolean
   /** Raw Gmail syntax, appended verbatim. Empty unless the user opts in. */
@@ -28,6 +32,8 @@ export const EMPTY_FILTERS: Filters = {
   from: '',
   olderThan: '',
   category: '',
+  after: '',
+  before: '',
   hasAttachment: false,
   unreadOnly: false,
   raw: '',
@@ -39,10 +45,23 @@ export function hasAnyFilter(filters: Filters): boolean {
     filters.from.trim() !== '' ||
     filters.olderThan !== '' ||
     filters.category !== '' ||
+    filters.after !== '' ||
+    filters.before !== '' ||
     filters.hasAttachment ||
     filters.unreadOnly ||
     filters.raw.trim() !== ''
   )
+}
+
+/** `2026-01-31` -> `2026/02/01`, so an inclusive end date reads as one. */
+function nextDay(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return isoDate.replace(/-/g, '/')
+
+  date.setUTCDate(date.getUTCDate() + 1)
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getUTCDate()}`.padStart(2, '0')
+  return `${date.getUTCFullYear()}/${month}/${day}`
 }
 
 /**
@@ -61,6 +80,15 @@ export function buildQuery(filters: Filters): string {
   if (from) parts.push(`from:${from}`)
 
   if (filters.olderThan) parts.push(`older_than:${filters.olderThan}`)
+
+  /*
+   * Gmail wants `YYYY/MM/DD`, the date input gives `YYYY-MM-DD`, and `before:`
+   * is exclusive of the day named. A range picked as 1–31 January that quietly
+   * stopped on the 30th would be a filter that lies, so the end date is pushed
+   * out by a day to make it mean what the field says.
+   */
+  if (filters.after) parts.push(`after:${filters.after.replace(/-/g, '/')}`)
+  if (filters.before) parts.push(`before:${nextDay(filters.before)}`)
   if (filters.category) parts.push(`category:${filters.category}`)
   if (filters.hasAttachment) parts.push('has:attachment')
   if (filters.unreadOnly) parts.push('is:unread')
@@ -160,6 +188,52 @@ export function MailFilters({
           options={CATEGORIES}
           onChange={(next) => set('category', next)}
         />
+      </div>
+
+      <div className="filters__row filters__row--dates">
+        {/*
+          A range, not another preset. "Older than a year" cannot express
+          "that job I had in 2019", and telling someone to write
+          `after:2019/01/01` in the raw box is telling them to learn Gmail's
+          syntax to answer an ordinary question.
+        */}
+        <span className="formlabel">Between</span>
+
+        <label htmlFor="f-after" className="sr-only">
+          Earliest date
+        </label>
+        <input
+          id="f-after"
+          type="date"
+          className="filters__date"
+          value={filters.after}
+          max={filters.before || undefined}
+          onChange={(event) => set('after', event.target.value)}
+        />
+
+        <span className="hint">and</span>
+
+        <label htmlFor="f-before" className="sr-only">
+          Latest date
+        </label>
+        <input
+          id="f-before"
+          type="date"
+          className="filters__date"
+          value={filters.before}
+          min={filters.after || undefined}
+          onChange={(event) => set('before', event.target.value)}
+        />
+
+        {(filters.after || filters.before) && (
+          <button
+            type="button"
+            className="btn-quiet"
+            onClick={() => onChange({ ...filters, after: '', before: '' })}
+          >
+            Clear dates
+          </button>
+        )}
       </div>
 
       <div className="filters__row filters__row--toggles">

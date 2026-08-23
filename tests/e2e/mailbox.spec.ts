@@ -542,3 +542,46 @@ test.describe('how far a search reaches', () => {
     await expect.poll(() => calls.queries.at(-1)).toBe('in:trash mega')
   })
 })
+
+/*
+ * "Older than a year" cannot express "that job I had in 2019", and the raw
+ * Gmail-syntax box is not an answer for someone who came here to avoid
+ * learning the syntax.
+ */
+test.describe('custom date range', () => {
+  test('compiles a range into after: and before:', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    await page.getByLabel('Earliest date').fill('2019-01-01')
+    await page.getByLabel('Latest date').fill('2019-12-31')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    /*
+     * The end date is pushed out by a day on purpose: Gmail's `before:` is
+     * exclusive, so asking for a range ending on the 31st and quietly
+     * stopping on the 30th would be a filter that lies.
+     */
+    await expect.poll(() => calls.queries.at(-1)).toBe(
+      '-in:spam after:2019/01/01 before:2020/01/01',
+    )
+  })
+
+  test('either end works on its own', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    await page.getByLabel('Earliest date').fill('2020-06-15')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect.poll(() => calls.queries.at(-1)).toBe(
+      '-in:spam after:2020/06/15',
+    )
+
+    await page.getByRole('button', { name: 'Clear dates' }).click()
+    await page.getByLabel('Latest date').fill('2020-06-15')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect.poll(() => calls.queries.at(-1)).toBe(
+      '-in:spam before:2020/06/16',
+    )
+  })
+})

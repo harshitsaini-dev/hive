@@ -117,17 +117,11 @@ test.describe('several mailboxes', () => {
     await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('(4 shown)')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
 
     // 12:40 (acc-1), 12:35 (acc-2), 12:20 (acc-1) — interleaved, not grouped.
-    // The fourth arrives from the second page, which loads on its own.
     const subjects = await page.locator('.message__subject').allInnerTexts()
-    expect(subjects).toEqual([
-      'Message 0-1',
-      'Message 1-1',
-      'Message 0-2',
-      'Message 1-3',
-    ])
+    expect(subjects).toEqual(['Message 0-1', 'Message 1-1', 'Message 0-2'])
   })
 
   test('labels which mailbox each message came from', async ({ page }) => {
@@ -144,9 +138,9 @@ test.describe('several mailboxes', () => {
     await page.goto('/')
 
     await page.getByLabel(/Select page/).check()
-    await page.getByRole('button', { name: /Move 4 to Trash/ }).click()
+    await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
 
-    await expect(page.getByText(/Moved to Trash: 4/)).toBeVisible()
+    await expect(page.getByText(/Moved to Trash: 3/)).toBeVisible()
 
     /*
      * Two calls, not one. A Gmail message id only means anything against the
@@ -162,20 +156,20 @@ test.describe('several mailboxes', () => {
       ]),
     )
     expect(byAccount['acc-1']).toEqual(['acc-1-m1', 'acc-1-m2'])
-    expect(byAccount['acc-2']).toEqual(['acc-2-m1', 'acc-2-m3'])
+    expect(byAccount['acc-2']).toEqual(['acc-2-m1'])
   })
 
-  test('pages the rest in on its own, carrying the merged cursor', async ({
-    page,
-  }) => {
+  test('carries one cursor for the whole merged page', async ({ page }) => {
     const seen = await stub(page)
     await page.goto('/')
 
     /*
-     * Nobody clicked anything. A filter is a question about the mailbox, and
-     * leaving the answer half-fetched behind a button is what made a search
-     * that matched plenty look like a search that matched nothing.
+     * Paging stays a decision, not something the view does on its own. Every
+     * message on a page costs a metadata read, and fetching the rest unasked
+     * spent a minute's Gmail quota in one go.
      */
+    await expect(page.getByText('(3 shown)')).toBeVisible()
+    await page.getByRole('button', { name: /Load 500 more/ }).click()
     await expect(page.getByText('(4 shown)')).toBeVisible()
     await expect(page.getByText('All 4 matches loaded')).toBeVisible()
 
@@ -199,7 +193,7 @@ test.describe('several mailboxes', () => {
   }) => {
     const seen = await stub(page)
     await page.goto('/')
-    await expect(page.getByText('(4 shown)')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
 
     await page.keyboard.press('Control+k')
     await page.getByPlaceholder('Search every connected account').fill('invoice')
@@ -228,7 +222,7 @@ test.describe('several mailboxes', () => {
   }) => {
     const seen = await stub(page)
     await page.goto('/')
-    await expect(page.getByText('(4 shown)')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
 
     await page.keyboard.press('Control+k')
     await page.getByPlaceholder('Search every connected account').fill('invoice')
@@ -251,7 +245,7 @@ test.describe('several mailboxes', () => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('(4 shown)')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
 
     // exact, or the sidebar's 'Accounts' nav item matches too.
     await page.getByRole('button', { name: 'Account', exact: true }).click()
@@ -261,4 +255,55 @@ test.describe('several mailboxes', () => {
       .poll(() => seen.searchUrls.at(-1) ?? '')
       .toContain('accountId=acc-2')
   })
+})
+
+/*
+ * A cursor that fails to advance replays the page it just returned. The
+ * symptom is not an error: the list simply grows with the same messages
+ * again, which reads as "the filter stopped being applied further down".
+ */
+test('a cursor that repeats itself does not duplicate the list', async ({
+  page,
+}) => {
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ user: { id: 'u1', email: 'tester@example.test' } }),
+    }),
+  )
+  await page.route('**/api/accounts', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ accounts: ACCOUNTS }),
+    }),
+  )
+
+  // Always the same page, always a token — a mailbox stuck in a loop.
+  await page.route('**/api/messages?**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        messages: [message(0, 1, 40), message(1, 1, 35)],
+        nextPageToken: 'cursor-abc',
+        accounts: ACCOUNTS.map((account) => ({
+          accountId: account.id,
+          gmailAddress: account.gmailAddress,
+          error: null,
+        })),
+        skipped: [],
+      }),
+    }),
+  )
+
+  await page.goto('/')
+  await expect(page.getByText('(2 shown)')).toBeVisible()
+
+  await page.getByRole('button', { name: /Load 500 more/ }).click()
+
+  // Still two, and the button is gone rather than offering another lap.
+  await expect(page.getByText('All 2 matches loaded')).toBeVisible()
+  expect(await page.locator('.message__subject').count()).toBe(2)
 })

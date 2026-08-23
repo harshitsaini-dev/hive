@@ -1790,6 +1790,22 @@ input[type='radio'] {
   flex: 1 1 14rem;
 }
 
+.filters__row--dates {
+  gap: 0.6rem;
+  font-size: 0.88rem;
+}
+
+/*
+ * Native date inputs come with the browser's own chrome, which ignores most
+ * of what the rest of the form is styled with. Matching the surrounding
+ * fields is the most that can be done without rebuilding a calendar.
+ */
+.filters__date {
+  flex: 0 1 11rem;
+  min-width: 8.5rem;
+  color-scheme: light dark;
+}
+
 .checkline {
   display: flex;
   gap: 0.4rem;

@@ -8,6 +8,18 @@ import { chunk, ReauthRequiredError } from './index.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1'
 
+/**
+ * Gmail's per-minute quota, exhausted. Its own kind because the caller has a
+ * useful thing to say about it — wait and try again, fewer at a time — which
+ * is lost if it arrives as a generic failure carrying Google's raw JSON.
+ */
+export class RateLimitedError extends Error {
+  constructor() {
+    super('Gmail is rate limiting this account. Wait a minute and try again.')
+    this.name = 'RateLimitedError'
+  }
+}
+
 async function gmailFetch(
   accessToken: string,
   path: string,
@@ -27,19 +39,50 @@ async function gmailFetch(
   return response
 }
 
+/**
+ * Gmail reports a per-minute quota breach two different ways: a 429, and a 403
+ * whose body says `rateLimitExceeded`. The 403 is the surprising one — it
+ * reads like a permission problem and was surfaced to users as one, wrapped in
+ * a wall of Google's JSON, when all that had happened was asking too quickly.
+ */
+function isRateLimited(status: number, body: string): boolean {
+  if (status === 429) return true
+  return (
+    status === 403 &&
+    /rateLimitExceeded|userRateLimitExceeded|Quota exceeded/i.test(body)
+  )
+}
+
+const MAX_ATTEMPTS = 4
+
 async function gmailJson<T>(
   accessToken: string,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await gmailFetch(accessToken, path, init)
+  for (let attempt = 1; ; attempt++) {
+    const response = await gmailFetch(accessToken, path, init)
 
-  if (!response.ok) {
+    if (response.ok) return (await response.json()) as T
+
     const detail = await response.text().catch(() => '')
+
+    /*
+     * Backing off is the whole remedy: the quota is per minute, so waiting is
+     * what makes the next attempt work. Retrying immediately would only spend
+     * more of the quota that has already run out.
+     */
+    if (isRateLimited(response.status, detail) && attempt < MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500))
+      continue
+    }
+
+    if (isRateLimited(response.status, detail)) {
+      throw new RateLimitedError()
+    }
+
     throw new Error(`Gmail ${path} failed (${response.status}): ${detail}`)
   }
-
-  return (await response.json()) as T
 }
 
 export interface MessageRef {

@@ -12,6 +12,7 @@ import {
   listAllMessageIds,
   listMessages,
   permanentlyDeleteMessages,
+  RateLimitedError,
   ScopeNotGrantedError,
   sendMessage,
   trashMessages,
@@ -23,6 +24,26 @@ import { authed, requireAuth } from '../middleware/auth.js'
 import { scopeMissing, withGmail } from '../gmail.js'
 
 export const messagesRouter: Router = Router()
+
+/**
+ * A sentence, not Google's error envelope.
+ *
+ * A rate-limited search used to put six hundred characters of nested JSON on
+ * screen — `PERMISSION_DENIED`, quota metric names, a project number — which
+ * reads as "this app is broken and possibly leaking its internals" when the
+ * actual meaning is "you asked for too much in one minute".
+ */
+function describeGmailFailure(error: unknown): string {
+  if (error instanceof RateLimitedError) return error.message
+
+  const message = error instanceof Error ? error.message : ''
+  if (/rateLimitExceeded|Quota exceeded/i.test(message)) {
+    return 'Gmail is rate limiting this account. Wait a minute and try again.'
+  }
+
+  // Anything else: say it failed without repeating Google's payload back.
+  return 'Gmail could not complete this search.'
+}
 
 /**
  * Ceiling on how many messages one bulk action may touch.
@@ -181,7 +202,7 @@ messagesRouter.get(
             gmailAddress: account.gmail_address,
             nextPageToken: null,
             messages: [],
-            error: error instanceof Error ? error.message : 'Search failed',
+            error: describeGmailFailure(error),
           }
         }
       }),

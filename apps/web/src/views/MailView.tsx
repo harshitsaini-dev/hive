@@ -23,17 +23,6 @@ import { MessageListSkeleton } from '../Skeleton.js'
  */
 const PAGE_SIZE = 500
 
-/*
- * How many messages the view will page in by itself before it stops and asks.
- *
- * A filter is a question about the whole mailbox, not about the page you can
- * see, so the pages that follow are fetched without being asked for. They are
- * not free though — every message costs a metadata fetch, so a hundred
- * thousand of them would grind for an hour. Ten thousand matches the bulk cap,
- * and past it the button comes back.
- */
-const AUTO_LOAD_MAX = 10_000
-
 interface Load {
   loading: boolean
   messages: MessageRow[]
@@ -97,8 +86,6 @@ export function MailView({
   const [resolving, setResolving] = useState(false)
   /** Opt back into the folder when a search should not leave it. */
   const [folderOnly, setFolderOnly] = useState(false)
-  /** Paused by the user, or by hitting the ceiling. */
-  const [paused, setPaused] = useState(false)
   /** True once the view has paged past the first response. */
   const [paged, setPaged] = useState(false)
   /**
@@ -166,7 +153,6 @@ export function MailView({
     setSelected(new Set())
     setWholeQuery(null)
     setReading(null)
-    setPaused(false)
     setPaged(false)
     setTotal(null)
 
@@ -223,11 +209,27 @@ export function MailView({
       })
 
       setPaged(true)
-      setLoad((previous) => ({
-        ...previous,
-        messages: [...previous.messages, ...result.messages],
-        nextPageToken: result.nextPageToken,
-      }))
+      setLoad((previous) => {
+        /*
+         * Deduped on append. A cursor that fails to advance — a mailbox that
+         * hands back the token it was given — would otherwise replay its last
+         * page underneath the first, and a list with the same messages twice
+         * looks exactly like a filter that stopped being applied partway down.
+         */
+        const seen = new Set(
+          previous.messages.map((m) => `${m.accountId}:${m.gmailMessageId}`),
+        )
+        const fresh = result.messages.filter(
+          (m) => !seen.has(`${m.accountId}:${m.gmailMessageId}`),
+        )
+
+        return {
+          ...previous,
+          messages: [...previous.messages, ...fresh],
+          // Nothing new means the cursor is going in circles; stop.
+          nextPageToken: fresh.length === 0 ? null : result.nextPageToken,
+        }
+      })
     } catch (caught) {
       setNotice(
         caught instanceof ApiRequestError
@@ -238,31 +240,6 @@ export function MailView({
       setLoadingMore(false)
     }
   }, [load.nextPageToken, query, accountId])
-
-  /*
-   * Keeps paging on its own until the search is exhausted.
-   *
-   * A filter asks a question about the mailbox; making someone click "load
-   * more" to finish answering it turns one page of results into the answer,
-   * which is exactly how a search that had matched everything looked like a
-   * search that had matched nothing. The pause below is the escape hatch, and
-   * the count beside it means nobody has to guess how far there is to go.
-   */
-  useEffect(() => {
-    if (paused || loadingMore || load.loading || !load.nextPageToken) return
-    if (load.messages.length >= AUTO_LOAD_MAX) {
-      setPaused(true)
-      return
-    }
-    void loadMore()
-  }, [
-    paused,
-    loadingMore,
-    load.loading,
-    load.nextPageToken,
-    load.messages.length,
-    loadMore,
-  ])
 
   /*
    * The real total, fetched alongside the pages rather than after them. Only
@@ -765,43 +742,30 @@ export function MailView({
           </ul>
 
           {load.nextPageToken && (
-            <div className="loadmore" role="status" aria-live="polite">
-              {!paused ? (
-                <>
-                  <span className="hint">
-                    {total
-                      ? `Loading the rest — ${load.messages.length.toLocaleString()} of ${total.count.toLocaleString()}${
-                          total.truncated ? '+' : ''
-                        }`
-                      : `Loading the rest — ${load.messages.length.toLocaleString()} so far`}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-quiet"
-                    onClick={() => setPaused(true)}
-                  >
-                    Stop here
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="hint">
-                    {total
-                      ? `Showing ${load.messages.length.toLocaleString()} of ${total.count.toLocaleString()}${
-                          total.truncated ? '+' : ''
-                        } matches`
-                      : `Showing ${load.messages.length.toLocaleString()} so far`}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    disabled={loadingMore}
-                    onClick={() => setPaused(false)}
-                  >
-                    {loadingMore ? 'Loading…' : 'Keep loading'}
-                  </button>
-                </>
-              )}
+            <div className="loadmore">
+              {/*
+                Pagination stays manual. Every message on a page costs a
+                metadata read, so a 500-message page across three mailboxes is
+                already most of a minute's Gmail quota — fetching the rest
+                unasked burned through it and the API started refusing. The
+                search itself still covers the whole mailbox; this button is
+                only about how much of the answer is drawn at once.
+              */}
+              <span className="hint">
+                {total
+                  ? `Showing ${load.messages.length.toLocaleString()} of ${total.count.toLocaleString()}${
+                      total.truncated ? '+' : ''
+                    } matches`
+                  : `Showing ${load.messages.length.toLocaleString()} so far`}
+              </span>
+              <button
+                type="button"
+                className="btn-outline"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? 'Loading…' : `Load ${PAGE_SIZE} more`}
+              </button>
             </div>
           )}
 
