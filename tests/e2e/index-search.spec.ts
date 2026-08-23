@@ -157,6 +157,14 @@ test.describe('index-served search', () => {
 
     await expect.poll(() => last(seen).get('q')).toContain('invoice')
     expect(last(seen).get('structured')).toBeNull()
+
+    /*
+     * And it is still fast, without the index ever holding a body. Gmail
+     * answers a search with ids — the cheap half — and the rows behind those
+     * ids come from the index. Google still does the matching, inside the
+     * messages, exactly as before.
+     */
+    await expect(page.getByText('Message 0')).toBeVisible()
   })
 
   test('raw Gmail syntax is never answered from the index either', async ({

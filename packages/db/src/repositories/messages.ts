@@ -430,3 +430,33 @@ export async function idsFromIndex(
 
   return result.rows.map((row) => String(row.gmail_message_id))
 }
+
+/**
+ * The indexed rows for a specific set of Gmail ids.
+ *
+ * The point is what it saves. A text search has to go to Gmail — the index
+ * holds no message bodies to search, and never will. But Gmail's answer is a
+ * list of *ids*, which is the cheap half: 500 to a call. The expensive half is
+ * turning those ids into something displayable, one metadata request each.
+ *
+ * If the messages are already indexed, that second half is free. Same ids,
+ * same order, same results — just hydrated from here instead of bought again
+ * from Google.
+ */
+export async function getIndexedByIds(
+  accountId: string,
+  gmailMessageIds: readonly string[],
+): Promise<IndexedRow[]> {
+  if (gmailMessageIds.length === 0) return []
+
+  const placeholders = gmailMessageIds.map(() => '?').join(',')
+  const result = await db().execute({
+    sql: `SELECT gmail_message_id, thread_id, from_addr, subject, snippet,
+                 labels_json, received_at
+          FROM message_index
+          WHERE account_id = ? AND gmail_message_id IN (${placeholders})`,
+    args: [accountId, ...gmailMessageIds],
+  })
+
+  return result.rows as unknown as IndexedRow[]
+}

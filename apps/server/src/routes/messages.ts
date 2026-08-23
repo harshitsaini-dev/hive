@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   countIndexMatches,
   findAnalysisRun,
+  getIndexedByIds,
   listAccountsForOwner,
   searchIndex,
   writeAuditEntry,
@@ -222,6 +223,69 @@ const bulkQuerySchema = z.object({
   query: z.string().min(1).max(500),
 })
 
+/**
+ * Turns a list of Gmail ids into displayable rows, as cheaply as possible.
+ *
+ * **This is what makes a body search fast without storing bodies.** A text
+ * query has to go to Gmail: the index holds sender, subject and a snippet,
+ * not message content, and storing content is precisely what the privacy
+ * policy forbids. But Gmail answers a search with *ids* — the cheap half, 500
+ * to a call. Turning those ids into rows is the expensive half, one metadata
+ * request each, and that half the index can do for free.
+ *
+ * So a search of a fully indexed mailbox costs one Gmail call regardless of
+ * how many messages it matches, and the words are still matched inside the
+ * message bodies by Google. Anything the index has not seen yet — mail that
+ * arrived seconds ago, or a mailbox still backfilling — is fetched normally,
+ * and the order Gmail returned is preserved either way.
+ */
+async function hydrate(
+  account: AccountRow,
+  accessToken: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return []
+
+  const cached = await getIndexedByIds(account.id, ids)
+  const byId = new Map(cached.map((row) => [row.gmail_message_id, row]))
+  const missing = ids.filter((id) => !byId.has(id))
+
+  if (missing.length > 0) {
+    // One batch request per hundred rather than one per message.
+    for (const message of await fetchMessagesMetadata(accessToken, missing)) {
+      byId.set(message.gmailMessageId, {
+        gmail_message_id: message.gmailMessageId,
+        thread_id: message.threadId,
+        from_addr: message.from,
+        subject: message.subject,
+        snippet: message.snippet,
+        labels_json: JSON.stringify(message.labels),
+        received_at: message.receivedAt.toISOString(),
+      })
+    }
+  }
+
+  // Gmail's order, not the database's — relevance and recency are its call.
+  return ids.flatMap((id) => {
+    const row = byId.get(id)
+    if (!row) return []
+
+    return [
+      {
+        gmailMessageId: row.gmail_message_id,
+        threadId: row.thread_id,
+        accountId: account.id,
+        gmailAddress: account.gmail_address,
+        from: row.from_addr,
+        subject: row.subject,
+        snippet: row.snippet,
+        labels: safeParse<string[]>(row.labels_json, []),
+        receivedAt: row.received_at,
+      },
+    ]
+  })
+}
+
 /** Parses the structured filters, treating anything malformed as absent. */
 function parseStructured(raw: string | undefined): IndexQueryShape | null {
   if (!raw) return null
@@ -397,23 +461,14 @@ messagesRouter.get(
               maxResults: pageSize,
             })
 
-            // One batch request per hundred messages rather than one per
-            // message: a page of 500 is five round trips instead of 500.
-            const messages = await fetchMessagesMetadata(
-              session.accessToken,
-              page.messages.map((ref) => ref.id),
-            )
+            const ids = page.messages.map((ref) => ref.id)
+            const messages = await hydrate(account, session.accessToken, ids)
 
             return {
               accountId: account.id,
               gmailAddress: account.gmail_address,
               nextPageToken: page.nextPageToken ?? null,
-              messages: messages.map((message) => ({
-                ...message,
-                accountId: account.id,
-                gmailAddress: account.gmail_address,
-                receivedAt: message.receivedAt.toISOString(),
-              })),
+              messages,
               error: null as string | null,
             }
           })
