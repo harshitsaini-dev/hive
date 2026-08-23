@@ -39,6 +39,7 @@ export * from './repositories/accounts.js'
 export * from './repositories/audit.js'
 export * from './repositories/rules.js'
 export * from './repositories/analysis.js'
+export { applyMigrations } from './migrate.js'
 
 let shared: Client | undefined
 

@@ -13,6 +13,7 @@ import { authRouter } from './routes/auth.js'
 import { accountsRouter } from './routes/accounts.js'
 import { messagesRouter } from './routes/messages.js'
 import { rulesRouter } from './routes/rules.js'
+import { applyMigrations } from '@hive/db'
 import { startRuleScheduler } from './rules-runner.js'
 
 const app = express()
@@ -102,6 +103,22 @@ const server = tls ? createHttpsServer(tls, app) : createHttpServer(app)
 const wss = new WebSocketServer({ server, path: '/ws' })
 wss.on('connection', (socket) => {
   socket.on('error', (error) => console.error('websocket error:', error))
+})
+
+/*
+ * Bring the schema up to date before serving.
+ *
+ * A deploy used to ship code needing a table that only existed once someone
+ * remembered to run `npm run db:migrate` from a laptop. When they did not,
+ * the app failed at the point of use rather than at boot, and the error it
+ * produced pointed at Gmail rather than at the schema.
+ *
+ * Logged and continued rather than fatal: refusing to boot over a transient
+ * database hiccup would take the whole service down, and every route already
+ * fails on its own terms if a table really is missing.
+ */
+void applyMigrations().catch((error: unknown) => {
+  console.error('could not apply migrations at startup:', error)
 })
 
 startRuleScheduler()

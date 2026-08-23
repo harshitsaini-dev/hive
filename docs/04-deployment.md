@@ -66,6 +66,13 @@ TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... npm run db:migrate
 Migrations are forward-only and recorded in a `_migrations` table, so running
 this again after a later deploy applies only what is new.
 
+**The server also applies them at boot**, so this step is a convenience rather
+than a requirement. That was added after a deploy shipped code needing a table
+nobody had created: the app failed at the point of use instead of at startup,
+and the error it produced blamed Gmail rather than the schema. A migration
+failure at boot is logged and the server still starts — refusing to boot over
+a transient database hiccup would take the whole service down.
+
 ## 2. Resend
 
 - [ ] Create an API key

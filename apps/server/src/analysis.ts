@@ -195,7 +195,18 @@ export async function runAnalysis(options: {
    * Counts and sender addresses only. Message content never reaches the
    * database; see the migration for the full note.
    */
-  await saveAnalysisRun({ userId, accountId, query, filters, result })
+  try {
+    await saveAnalysisRun({ userId, accountId, query, filters, result })
+  } catch (error) {
+    /*
+     * The run succeeded; only remembering it did not. Throwing here would
+     * discard minutes of Gmail quota over a failed cache write — and report a
+     * storage fault as if the analysis itself had failed, which is exactly
+     * the misdirection that cost an afternoon after the table was added but
+     * the migration had not been run against production.
+     */
+    console.error('could not store analysis run:', error)
+  }
 
   return result
 }

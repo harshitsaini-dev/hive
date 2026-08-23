@@ -91,17 +91,30 @@ function sniffImageType(bytes: Buffer): string | null {
  * screen — `PERMISSION_DENIED`, quota metric names, a project number — which
  * reads as "this app is broken and possibly leaking its internals" when the
  * actual meaning is "you asked for too much in one minute".
+ *
+ * **It must not blame Gmail for our own faults.** The first version returned
+ * "Gmail could not complete this search" for *anything* that went wrong,
+ * including a missing database table after a deploy — which sent a real
+ * investigation off towards the Gmail API for a problem that was entirely on
+ * this side. Whatever the message says, the original is logged.
  */
 function describeGmailFailure(error: unknown): string {
   if (error instanceof RateLimitedError) return error.message
 
-  const message = error instanceof Error ? error.message : ''
+  const message = error instanceof Error ? error.message : String(error)
+  console.error('mailbox operation failed:', error)
+
   if (/rateLimitExceeded|Quota exceeded/i.test(message)) {
     return 'Gmail is rate limiting this account. Wait a minute and try again.'
   }
+  if (/no such table|SQLITE_|LibsqlError|database/i.test(message)) {
+    return 'Hive could not reach its own database. This is a fault on our side, not with your mailbox.'
+  }
+  if (/Gmail |googleapis/i.test(message)) {
+    return 'Gmail could not complete this request.'
+  }
 
-  // Anything else: say it failed without repeating Google's payload back.
-  return 'Gmail could not complete this search.'
+  return 'Something went wrong on our side completing that.'
 }
 
 /**
