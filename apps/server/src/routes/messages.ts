@@ -19,7 +19,14 @@ import {
   untrashMessages,
 } from '@hive/gmail-client'
 import { asyncRoute, badRequest, HttpError, notFound } from '../errors.js'
-import { advanceJob, createJob, finishJob, getJob } from '../jobs.js'
+import {
+  advanceJob,
+  createJob,
+  finishJob,
+  getJob,
+  setJobResult,
+  setJobTotal,
+} from '../jobs.js'
 import { authed, requireAuth } from '../middleware/auth.js'
 import { scopeMissing, withGmail } from '../gmail.js'
 
@@ -385,6 +392,170 @@ messagesRouter.post(
 )
 
 /**
+ * Ceiling on how many messages one analysis run reads headers for.
+ *
+ * The counts above it are exact and nearly free — message ids come back 500
+ * at a time, so even a hundred thousand of them is a couple of hundred cheap
+ * calls. Working out *who sent them* is a different price entirely: that
+ * needs the `From` header of every single message, which is a metadata read
+ * each, and Gmail allows about three thousand of those a minute.
+ *
+ * So a hundred thousand messages is roughly half an hour of solid fetching
+ * for the sender breakdown alone. Rather than pretend otherwise, the run
+ * reads the newest slice, reports exactly how deep it got, and lets the
+ * caller ask for more. The totals it sits beside are still for everything.
+ */
+const MAX_SCAN = 250_000
+
+/**
+ * Ceiling on the id listing behind the exact counts.
+ *
+ * Deliberately far above `MAX_BULK`, which exists to limit the blast radius
+ * of an *action*. Nothing is destroyed by counting, and reusing the action
+ * cap here was a real bug: a hundred-thousand-message mailbox reported a
+ * total of ten thousand, which is a wrong number presented as a fact.
+ */
+const MAX_COUNT = 250_000
+
+/** Newest first, which is the order Gmail returns ids in. */
+const analyticsSchema = z.object({
+  accountId: z.string().min(1).optional(),
+  query: z.string().max(500),
+  scanLimit: z.number().int().min(100).max(MAX_SCAN),
+})
+
+/** `"Kapil Gupta <kapil@example.com>"` -> both halves, separately useful. */
+function splitFrom(from: string): { name: string; address: string } {
+  const withAngle = /^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/.exec(from)
+  if (withAngle) {
+    return {
+      name: (withAngle[1] ?? '').trim(),
+      address: (withAngle[2] ?? '').trim().toLowerCase(),
+    }
+  }
+
+  const bare = from.trim().replace(/[<>]/g, '').toLowerCase()
+  return { name: '', address: bare }
+}
+
+interface SenderTally {
+  address: string
+  name: string
+  count: number
+  withAttachment: number
+}
+
+/**
+ * POST /messages/analytics — what is actually in the mailbox, and who put it
+ * there.
+ *
+ * A job rather than a plain response because the sender breakdown reads a
+ * header per message and a large mailbox takes minutes. The two counts that
+ * matter most — how many match, and how many of those carry a file — are
+ * resolved from id lists and are exact regardless of how deep the scan got.
+ */
+messagesRouter.post(
+  '/analytics',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const parsed = analyticsSchema.safeParse(req.body)
+    if (!parsed.success) throw badRequest('A query and scanLimit are required')
+
+    const { accountId, query, scanLimit } = parsed.data
+    const user = authed(req).user
+
+    const accounts = (await listAccountsForOwner(user.id)).filter(
+      (account) => !accountId || account.id === accountId,
+    )
+    if (accounts.length === 0) throw badRequest('No matching account')
+
+    // Corrected below, once the query has been resolved and the real size of
+    // the work is known.
+    const job = createJob(user.id, 'analyze', 0)
+    res.json({ jobId: job.id })
+
+    void (async () => {
+      try {
+        let total = 0
+        let withAttachment = 0
+        let scanned = 0
+        let truncated = false
+        const senders = new Map<string, SenderTally>()
+
+        for (const account of accounts) {
+          await withGmail(user.id, account.id, async (session) => {
+            // Ids only: 500 per call, so this stays cheap at any size.
+            const all = await listAllMessageIds(
+              session.accessToken,
+              query,
+              MAX_COUNT,
+            )
+            const attached = await listAllMessageIds(
+              session.accessToken,
+              `${query} has:attachment`,
+              MAX_COUNT,
+            )
+
+            total += all.ids.length
+            withAttachment += attached.ids.length
+            if (all.truncated) truncated = true
+
+            const attachedSet = new Set(attached.ids)
+            const slice = all.ids.slice(0, scanLimit)
+            if (slice.length < all.ids.length) truncated = true
+
+            const before = scanned
+            setJobTotal(job.id, before + slice.length)
+            const metadata = await fetchMessagesMetadata(
+              session.accessToken,
+              slice,
+              (done) => advanceJob(job.id, before + done),
+            )
+
+            for (const message of metadata) {
+              const { name, address } = splitFrom(message.from)
+              if (!address) continue
+
+              const tally = senders.get(address) ?? {
+                address,
+                // The first non-empty display name wins; senders vary it.
+                name: '',
+                count: 0,
+                withAttachment: 0,
+              }
+              if (!tally.name && name) tally.name = name
+              tally.count += 1
+              if (attachedSet.has(message.gmailMessageId)) {
+                tally.withAttachment += 1
+              }
+              senders.set(address, tally)
+            }
+
+            scanned += slice.length
+          })
+        }
+
+        setJobResult(job.id, {
+          total,
+          withAttachment,
+          withoutAttachment: Math.max(0, total - withAttachment),
+          scanned,
+          truncated,
+          // Ranked, and capped: a thousand rows of one message each is not a
+          // finding, and the client would render every one of them.
+          senders: [...senders.values()]
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 200),
+        })
+        finishJob(job.id)
+      } catch (error) {
+        finishJob(job.id, describeGmailFailure(error))
+      }
+    })()
+  }),
+)
+
+/**
  * Runs a bulk action, optionally in the background with a progress job.
  *
  * Synchronous by default: for a handful of messages the round trip is shorter
@@ -469,6 +640,7 @@ messagesRouter.get(
       processed: job.processed,
       status: job.status,
       error: job.error,
+      result: job.result,
     })
   }),
 )

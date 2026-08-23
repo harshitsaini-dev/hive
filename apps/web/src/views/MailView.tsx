@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type MessageRow } from '../api.js'
 import { ConfirmDestructive } from '../ConfirmDestructive.js'
-import { AlertIcon, MailIcon, SearchIcon, TrashIcon } from '../Icons.js'
+import {
+  AlertIcon,
+  ChartIcon,
+  MailIcon,
+  SearchIcon,
+  TrashIcon,
+} from '../Icons.js'
 import {
   buildQuery,
   EMPTY_FILTERS,
@@ -10,6 +16,7 @@ import {
   MailFilters,
   type Filters,
 } from '../MailFilters.js'
+import { AnalyticsPanel } from '../AnalyticsPanel.js'
 import { MessageReader } from '../MessageReader.js'
 import { Select } from '../Select.js'
 import { MessageListSkeleton } from '../Skeleton.js'
@@ -113,6 +120,8 @@ export function MailView({
     accountId: string
     messageId: string
   } | null>(null)
+  /** The analysis panel, which shares the pane with the reader. */
+  const [analysing, setAnalysing] = useState(false)
 
   /*
    * Each view is a Gmail query; there is no second index.
@@ -468,6 +477,24 @@ export function MailView({
             Gmail empties this automatically after thirty days.
           </p>
         )}
+
+        {/*
+          Lives in the header rather than the pane it opens, because the pane
+          is empty until something asks for it — an entry point you can only
+          reach from the thing it opens is not an entry point.
+        */}
+        <button
+          type="button"
+          className="btn-quiet view__analyse"
+          aria-pressed={analysing}
+          onClick={() => {
+            setAnalysing(!analysing)
+            if (!analysing) setReading(null)
+          }}
+        >
+          <ChartIcon size={15} />
+          {analysing ? 'Hide analysis' : 'Analyse mailbox'}
+        </button>
       </header>
 
       {/* List on the left, reading pane on the right when one is open. */}
@@ -783,6 +810,36 @@ export function MailView({
       )}
 
         </div>
+
+        {/*
+          One pane, two things that want it. Reading a message wins: it is the
+          thing just clicked, and an analysis run that took minutes should not
+          be thrown away by opening an email, so it comes back on close.
+        */}
+        {!reading && analysing && (
+          <AnalyticsPanel
+            accounts={accounts}
+            onClose={() => setAnalysing(false)}
+            onCleaned={(message) => {
+              setNotice(message)
+              void refresh()
+            }}
+            onView={(sender) => {
+              /*
+               * Fills the list beside the panel rather than replacing it.
+               * Deciding whether 812 messages from an address are junk or
+               * receipts is a question you answer by looking, and the answer
+               * has to be reachable without losing the analysis that took
+               * minutes to produce.
+               */
+              const next = { ...EMPTY_FILTERS, from: sender.address }
+              setFilters(next)
+              setApplied(next)
+              setFolderOnly(false)
+              setReading(null)
+            }}
+          />
+        )}
 
         {reading && (
           <MessageReader

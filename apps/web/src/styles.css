@@ -2925,3 +2925,213 @@ a.link-plain {
   display: flex;
   justify-content: space-between;
 }
+
+/* ---- mailbox analysis ---------------------------------------------------- */
+
+.view__analyse {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+}
+
+/* Shares the reader's pane, so it inherits the reader's sticky geometry. */
+.analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.analytics__title {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.analytics__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.analytics__field .select__button {
+  width: 100%;
+}
+
+.analytics__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.analytics__intro,
+.analytics__note {
+  margin: 0;
+}
+
+.analytics__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.analytics__progress {
+  margin: 0;
+}
+
+.analytics__totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.analytics__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.analytics__stat strong {
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.analytics__stat .hint {
+  font-size: 0.72rem;
+}
+
+/* Two numbers that add up to a whole are one bar, not two. */
+.analytics__split {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.analytics__split-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.analytics__subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+}
+
+.analytics__subtitle .hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.analytics__senders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analytics__senders li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.analytics__sender {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.analytics__who {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.analytics__who strong,
+.analytics__who .hint {
+  overflow: hidden;
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics__who .hint {
+  font-size: 0.72rem;
+}
+
+.analytics__count {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics__attached {
+  display: flex;
+  gap: 0.15rem;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+/* Relative to the busiest sender, so the shape of the list is readable. */
+.analytics__bar {
+  display: block;
+  height: 3px;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+/* The "this will take a while" note above the run button. */
+.analytics__warn {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.analytics__warn svg {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.analytics__actions {
+  display: flex;
+  flex: none;
+  gap: 0.25rem;
+}
+
+.analytics__act {
+  gap: 0.3rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.76rem;
+}
+
+.analytics__when {
+  margin: 0;
+  font-size: 0.75rem;
+}

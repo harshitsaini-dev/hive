@@ -267,3 +267,12 @@ export function CalendarIcon(props: IconProps) {
     </Icon>
   )
 }
+
+export function ChartIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15v-4M12 17V7M17 17v-7" />
+    </Icon>
+  )
+}

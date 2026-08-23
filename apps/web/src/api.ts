@@ -94,11 +94,31 @@ export interface ParsedMessage {
 
 export interface BulkJob {
   id: string
-  action: 'trash' | 'restore' | 'delete_forever'
+  action: 'trash' | 'restore' | 'delete_forever' | 'analyze'
   total: number
   processed: number
   status: 'running' | 'done' | 'failed'
   error: string | null
+  /** Only analysis runs produce one. */
+  result: MailboxAnalysis | null
+}
+
+export interface SenderTally {
+  address: string
+  name: string
+  count: number
+  withAttachment: number
+}
+
+export interface MailboxAnalysis {
+  /** Exact, whatever the scan depth — counted from ids, not from headers. */
+  total: number
+  withAttachment: number
+  withoutAttachment: number
+  /** How many messages the sender breakdown actually read headers for. */
+  scanned: number
+  truncated: boolean
+  senders: SenderTally[]
 }
 
 /** A bulk call answers with a job when it was asked to run in the background. */
@@ -227,6 +247,20 @@ export const api = {
     }),
 
   getJob: (id: string) => request<BulkJob>(`/messages/jobs/${id}`),
+
+  /**
+   * Starts an analysis run. Always a job: the sender breakdown reads a header
+   * per message, so a large mailbox takes minutes.
+   */
+  analyze: (options: {
+    accountId?: string
+    query: string
+    scanLimit: number
+  }) =>
+    request<{ jobId: string }>('/messages/analytics', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    }),
 
   /**
    * Irreversible. The confirmation phrase is required by the server too, so no

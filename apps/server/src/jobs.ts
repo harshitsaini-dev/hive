@@ -20,12 +20,20 @@ export type JobStatus = 'running' | 'done' | 'failed'
 export interface Job {
   id: string
   ownerId: string
-  action: 'trash' | 'restore' | 'delete_forever'
+  action: 'trash' | 'restore' | 'delete_forever' | 'analyze'
   total: number
   processed: number
   status: JobStatus
   /** Only set when status is 'failed'. Safe to show a user. */
   error: string | null
+  /**
+   * What the job produced, for the kinds that produce something.
+   *
+   * Bulk actions only ever needed a count, but an analysis run is the whole
+   * point of its own output — and it can take minutes over a large mailbox,
+   * which is exactly why it is a job rather than a request that waits.
+   */
+  result: unknown
   startedAt: number
   finishedAt: number | null
 }
@@ -59,6 +67,7 @@ export function createJob(
     processed: 0,
     status: 'running',
     error: null,
+    result: null,
     startedAt: Date.now(),
     finishedAt: null,
   }
@@ -76,9 +85,26 @@ export function getJob(ownerId: string, id: string): Job | null {
   return job && job.ownerId === ownerId ? job : null
 }
 
+/**
+ * Corrects the size of a job once it is known.
+ *
+ * An analysis cannot state its own total up front: how many messages it will
+ * read headers for depends on how many the query matches, which is the first
+ * thing the job goes and finds out.
+ */
+export function setJobTotal(id: string, total: number): void {
+  const job = jobs.get(id)
+  if (job) job.total = total
+}
+
 export function advanceJob(id: string, processed: number): void {
   const job = jobs.get(id)
   if (job) job.processed = processed
+}
+
+export function setJobResult(id: string, result: unknown): void {
+  const job = jobs.get(id)
+  if (job) job.result = result
 }
 
 export function finishJob(id: string, error?: string): void {
