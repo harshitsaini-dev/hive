@@ -117,11 +117,17 @@ test.describe('several mailboxes', () => {
     await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('(3 shown)')).toBeVisible()
+    await expect(page.getByText('(4 shown)')).toBeVisible()
 
     // 12:40 (acc-1), 12:35 (acc-2), 12:20 (acc-1) — interleaved, not grouped.
+    // The fourth arrives from the second page, which loads on its own.
     const subjects = await page.locator('.message__subject').allInnerTexts()
-    expect(subjects).toEqual(['Message 0-1', 'Message 1-1', 'Message 0-2'])
+    expect(subjects).toEqual([
+      'Message 0-1',
+      'Message 1-1',
+      'Message 0-2',
+      'Message 1-3',
+    ])
   })
 
   test('labels which mailbox each message came from', async ({ page }) => {
@@ -138,9 +144,9 @@ test.describe('several mailboxes', () => {
     await page.goto('/')
 
     await page.getByLabel(/Select page/).check()
-    await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
+    await page.getByRole('button', { name: /Move 4 to Trash/ }).click()
 
-    await expect(page.getByText(/Moved to Trash: 3/)).toBeVisible()
+    await expect(page.getByText(/Moved to Trash: 4/)).toBeVisible()
 
     /*
      * Two calls, not one. A Gmail message id only means anything against the
@@ -156,21 +162,25 @@ test.describe('several mailboxes', () => {
       ]),
     )
     expect(byAccount['acc-1']).toEqual(['acc-1-m1', 'acc-1-m2'])
-    expect(byAccount['acc-2']).toEqual(['acc-2-m1'])
+    expect(byAccount['acc-2']).toEqual(['acc-2-m1', 'acc-2-m3'])
   })
 
-  test('carries one cursor for the whole merged page', async ({ page }) => {
+  test('pages the rest in on its own, carrying the merged cursor', async ({
+    page,
+  }) => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('(3 shown)')).toBeVisible()
-    await page.getByRole('button', { name: /Load 500 more/ }).click()
-
+    /*
+     * Nobody clicked anything. A filter is a question about the mailbox, and
+     * leaving the answer half-fetched behind a button is what made a search
+     * that matched plenty look like a search that matched nothing.
+     */
     await expect(page.getByText('(4 shown)')).toBeVisible()
+    await expect(page.getByText('All 4 matches loaded')).toBeVisible()
 
     // The follow-up request hands the cursor straight back, unmodified.
-    const followUp = seen.searchUrls.at(-1) ?? ''
-    expect(followUp).toContain('pageToken=cursor-abc')
+    expect(seen.searchUrls.at(-1) ?? '').toContain('pageToken=cursor-abc')
 
     // Appended, not replaced — a selection made before paging survives.
     const subjects = await page.locator('.message__subject').allInnerTexts()
@@ -189,7 +199,7 @@ test.describe('several mailboxes', () => {
   }) => {
     const seen = await stub(page)
     await page.goto('/')
-    await expect(page.getByText('(3 shown)')).toBeVisible()
+    await expect(page.getByText('(4 shown)')).toBeVisible()
 
     await page.keyboard.press('Control+k')
     await page.getByPlaceholder('Search every connected account').fill('invoice')
@@ -218,7 +228,7 @@ test.describe('several mailboxes', () => {
   }) => {
     const seen = await stub(page)
     await page.goto('/')
-    await expect(page.getByText('(3 shown)')).toBeVisible()
+    await expect(page.getByText('(4 shown)')).toBeVisible()
 
     await page.keyboard.press('Control+k')
     await page.getByPlaceholder('Search every connected account').fill('invoice')
@@ -241,7 +251,7 @@ test.describe('several mailboxes', () => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('(3 shown)')).toBeVisible()
+    await expect(page.getByText('(4 shown)')).toBeVisible()
 
     // exact, or the sidebar's 'Accounts' nav item matches too.
     await page.getByRole('button', { name: 'Account', exact: true }).click()
