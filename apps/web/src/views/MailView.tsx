@@ -531,6 +531,16 @@ export function MailView({
               }
             />
             Select all {load.messages.length.toLocaleString()} loaded
+            {/*
+              Said explicitly, because "1,264 loaded" reads as "that is all of
+              them" when a mailbox holds 1,323. Each account returns one page
+              at a time, so a merged count is a floor, not a total.
+            */}
+            {load.nextPageToken && (
+              <span className="hint selectall__more">
+                — this is the first page of each mailbox, and there are more
+              </span>
+            )}
           </label>
 
           <ul className="messages">

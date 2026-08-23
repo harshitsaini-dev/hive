@@ -61,6 +61,29 @@ product:
   call is made — if it goes wrong, there is at least a record of what was
   destroyed.
 
+## Resolution: published without verification
+
+**Decided 23 August 2026.** The app is set to "In production" in the Google
+Cloud console, and verification is **not** being pursued. What that means in
+practice:
+
+- **No CASA, no cost.** Verification is what triggers the assessment; skipping
+  it skips the bill. The restricted scope stays.
+- **A 100-user cap**, enforced by Google for unverified apps. Fine for what
+  this is.
+- **Users see an unverified-app warning** on the consent screen and have to
+  click through *Advanced → Go to Hive*. That is the price of not verifying,
+  and it is visible to every new user.
+
+The alternative — staying in Testing mode — looked cheaper but was worse:
+Google expires refresh tokens issued by a Testing-mode app after **seven
+days**, so every connected mailbox would need reconnecting weekly. Publishing
+removes that entirely, which is the main reason to do it.
+
+Verification remains available later if the user cap ever binds. Confirm the
+CASA tier and its price before starting; if it is not free, dropping the scope
+is still the expected answer and the runtime check below makes that cheap.
+
 ## Cost posture
 
 The project has a hard constraint of costing nothing to run. This decision does

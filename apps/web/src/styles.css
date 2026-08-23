@@ -2625,3 +2625,12 @@ a.link-plain {
     transition: none;
   }
 }
+
+/* The "there are more" note beside the select-all checkbox. */
+.selectall {
+  flex-wrap: wrap;
+}
+
+.selectall__more {
+  font-size: 0.82rem;
+}

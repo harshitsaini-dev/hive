@@ -43,25 +43,25 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
 - `start.bat` / `stop.bat` / `restart.bat` / `status.bat` run the servers in
   the background; logs land in `.logs/`.
 
-## Deferred, deliberately
+## Google verification: not happening
 
-- **Resend** — `RESEND_API_KEY` unset, so login codes print to the server log
-  instead of being emailed. Sending from `Bee <no-reply@bee.harshitsaini.in>`
-  also needs that subdomain verified in Resend.
-- **Turso** — not needed until deploy.
-- **Google verification** — the app stays in Testing mode (free, 100 users).
-  Publishing with `https://mail.google.com/` triggers a CASA assessment that
-  may cost real money. Confirm the tier and price before starting; dropping
-  the scope is the expected answer if it is not free.
+The app is **published without verification** (23 August 2026). No CASA, no
+cost, and refresh tokens no longer expire weekly the way they did in Testing
+mode. The trade is a 100-user cap and an unverified-app warning on the consent
+screen that every new user has to click past. See ADR 0002.
 
 ## Known gaps
 
-- Bulk trash has no live progress bar. The WebSocket server is mounted but no
-  job reports through it yet, so a large batch just takes a while.
-- Search pagination is per-account and the UI only shows the first page.
-- The message index table exists but nothing writes to it — search currently
-  goes straight to Gmail every time. Fine at this scale; the sync engine that
-  fills it is what makes it fast later.
+- **Nothing writes to `message_index`.** Every search goes to Gmail. With the
+  batch endpoint that is roughly 1.5s per hundred messages, so the index is
+  not yet worth the sync machinery — a `history.list` cursor, a 30-day horizon
+  and a full re-index path — that filling it would require.
+- **Bulk progress is polled, not pushed.** A WebSocket server is mounted but
+  unreachable from the browser: Vercel does not proxy WebSocket upgrades, so a
+  socket would be cross-origin and the session cookie would not go with it.
+  Polling a job id through the existing proxy works and is what ships.
+- **Jobs live in memory.** Fine on one Render instance; if the API is ever
+  scaled out, a poll could reach a process that never heard of the job.
 
 ## Live
 
@@ -79,10 +79,13 @@ fire — see `docs/04-deployment.md`.
 
 ## Next up
 
-1. **Google verification** (Phase 7) — deferred on purpose. Confirm the CASA
-   tier and price first; see ADR 0002. The app runs in Testing mode, capped at
-   100 users, until then.
-2. **Bulk-trash progress** over the WebSocket — note the Vercel rewrite does
-   not carry WebSockets, so this needs a direct connection to Render.
-3. **The sync engine** that fills `message_index`, once search volume makes
-   going to Gmail every time feel slow.
+Nothing outstanding from the roadmap. Possible future work, in rough order of
+value:
+
+1. **The sync engine** that fills `message_index`, if search to Gmail ever
+   starts to feel slow. It needs a history cursor, a 30-day horizon and a full
+   re-index fallback, so it is real work for a benefit that is not felt yet.
+2. **Moving jobs to the database**, only if the API is ever scaled past one
+   instance.
+3. **Verification**, only if the 100-user cap ever binds — and only after
+   confirming what CASA costs. See ADR 0002.
