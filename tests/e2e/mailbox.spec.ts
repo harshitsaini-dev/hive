@@ -39,6 +39,8 @@ interface Calls {
   lastDeletePayload: unknown
   lastTrashPayload: unknown
   resolveCalls: number
+  /** Every `q` the page has searched for, oldest first. */
+  queries: string[]
 }
 
 async function stubApi(page: Page): Promise<Calls> {
@@ -49,6 +51,7 @@ async function stubApi(page: Page): Promise<Calls> {
     lastDeletePayload: null,
     lastTrashPayload: null,
     resolveCalls: 0,
+    queries: [],
   }
 
   await page.route('**/api/auth/me', (route) =>
@@ -69,6 +72,7 @@ async function stubApi(page: Page): Promise<Calls> {
 
   await page.route('**/api/messages?**', (route) => {
     const query = new URL(route.request().url()).searchParams.get('q') ?? ''
+    calls.queries.push(query)
     const inTrash = query.includes('in:trash') && !query.includes('-in:trash')
 
     route.fulfill({
@@ -480,5 +484,61 @@ test.describe('bulk progress', () => {
     // No job, so no progress bar to flash on screen.
     await expect(page.getByRole('progressbar')).toBeHidden()
     expect(body?.background).toBe(false)
+  })
+})
+
+/*
+ * Reported against the deployed app: a search for a word plus "has
+ * attachment" returned nothing while the mail plainly existed. It had been
+ * archived, and archived mail is not `in:inbox` — so the folder the user
+ * happened to be standing in was quietly hiding most of the mailbox from
+ * their own search.
+ */
+test.describe('how far a search reaches', () => {
+  test('applying a filter drops the folder scope', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    // Browsing is still the folder. That part was never wrong.
+    await expect.poll(() => calls.queries.at(-1)).toBe('in:inbox')
+
+    await page.getByPlaceholder('Search words in subject or body').fill('mega')
+    await page.getByLabel('Has attachment').check()
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    await expect.poll(() => calls.queries.at(-1)).toBe(
+      '-in:spam mega has:attachment',
+    )
+    await expect(
+      page.getByRole('heading', { name: 'Search results' }),
+    ).toBeVisible()
+  })
+
+  test('the reach can be narrowed back to the folder', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+
+    await page.getByPlaceholder('Search words in subject or body').fill('mega')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect.poll(() => calls.queries.at(-1)).toBe('-in:spam mega')
+
+    await page.getByRole('button', { name: 'Only search Inbox' }).click()
+    await expect.poll(() => calls.queries.at(-1)).toBe('in:inbox mega')
+
+    // And back out again, without retyping the search.
+    await page.getByRole('button', { name: 'Search everywhere' }).click()
+    await expect.poll(() => calls.queries.at(-1)).toBe('-in:spam mega')
+  })
+
+  test('the Trash view keeps its scope while searching', async ({ page }) => {
+    const calls = await stubApi(page)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Trash' }).click()
+
+    await page.getByPlaceholder('Search words in subject or body').fill('mega')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    // The bin is the subject here, so leaving it would make the view useless.
+    await expect.poll(() => calls.queries.at(-1)).toBe('in:trash mega')
   })
 })

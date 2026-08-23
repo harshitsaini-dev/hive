@@ -2649,6 +2649,14 @@ a.link-plain {
   margin-bottom: 0.6rem;
 }
 
+/* The "searching all mail" line, with its narrow-it-down button inline. */
+.view__scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+}
+
 /* Pushed to its own line on wide screens so the two controls stay adjacent. */
 .selectbar__note {
   flex-basis: 100%;

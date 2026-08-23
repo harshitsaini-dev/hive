@@ -84,6 +84,8 @@ export function MailView({
   const [pending, setPending] = useState<'trash' | 'restore' | 'delete' | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [resolving, setResolving] = useState(false)
+  /** Opt back into the folder when a search should not leave it. */
+  const [folderOnly, setFolderOnly] = useState(false)
   /** Set when the selection covers the whole query, not just this page. */
   const [wholeQuery, setWholeQuery] = useState<{
     rows: { accountId: string; gmailMessageId: string }[]
@@ -105,11 +107,23 @@ export function MailView({
   /*
    * Each view is a Gmail query; there is no second index.
    *
-   * Inbox is `in:inbox`, not `-in:trash`. Those look equivalent and are not:
-   * the latter matches everything outside the bin, so sent mail, drafts and
-   * spam all showed up in the inbox together.
+   * Browsing a folder is `in:inbox`, not `-in:trash`. Those look equivalent
+   * and are not: the latter matches everything outside the bin, so sent mail,
+   * drafts and spam all showed up in the inbox together.
+   *
+   * Searching is different from browsing. A search for a word plus an
+   * attachment found nothing while the mail plainly existed, because it had
+   * been archived — archived mail is not `in:inbox`, and scoping a search to
+   * the folder you happened to be standing in hides most of the mailbox. So
+   * the moment any filter is applied the folder scope drops, the same way
+   * Gmail's own search does. Spam is the one thing still excluded, and the
+   * Trash view keeps its scope because the bin *is* the subject there.
    */
-  const scope = everywhere
+  const searching = hasAnyFilter(applied)
+  const spansAll =
+    !folderOnly && (everywhere || (searching && mode !== 'trash'))
+
+  const scope = spansAll
     ? '-in:spam'
     : mode === 'trash'
       ? 'in:trash'
@@ -344,14 +358,14 @@ export function MailView({
     <section className={reading ? 'view view--mail view--split' : 'view view--mail'}>
       <header className="view__head">
         <h1>
-          {everywhere ? (
+          {spansAll ? (
             <SearchIcon size={20} />
           ) : mode === 'trash' ? (
             <TrashIcon size={20} />
           ) : (
             <MailIcon size={20} />
           )}
-          {everywhere
+          {spansAll
             ? 'Search results'
             : mode === 'trash'
               ? 'Trash'
@@ -359,13 +373,37 @@ export function MailView({
                 ? 'Sent'
                 : 'Inbox'}
         </h1>
-        {everywhere && (
-          <p className="hint">
-            Every folder of every connected mailbox — inbox, sent, archive and
-            trash. Pick a section on the left to leave the search.
+
+        {spansAll && (
+          <p className="hint view__scope">
+            Searching all mail — inbox, sent, archived and trash.
+            {!everywhere && (
+              <button
+                type="button"
+                className="btn-quiet"
+                onClick={() => setFolderOnly(true)}
+              >
+                Only search {mode === 'sent' ? 'Sent' : 'Inbox'}
+              </button>
+            )}
           </p>
         )}
-        {!everywhere && mode === 'trash' && (
+
+        {!spansAll && searching && mode !== 'trash' && (
+          <p className="hint view__scope">
+            Searching {mode === 'sent' ? 'Sent' : 'Inbox'} only — archived mail
+            is not included.
+            <button
+              type="button"
+              className="btn-quiet"
+              onClick={() => setFolderOnly(false)}
+            >
+              Search everywhere
+            </button>
+          </p>
+        )}
+
+        {!spansAll && mode === 'trash' && (
           <p className="hint">
             Gmail empties this automatically after thirty days.
           </p>
@@ -524,9 +562,11 @@ export function MailView({
         <p className="hint">
           {mode === 'trash'
             ? 'Trash is empty.'
-            : hasAnyFilter(applied)
-              ? 'Nothing matched those filters.'
-              : 'No mail here.'}
+            : !searching
+              ? 'No mail here.'
+              : spansAll
+                ? 'Nothing in any folder matched those filters.'
+                : `Nothing in ${mode === 'sent' ? 'Sent' : 'Inbox'} matched — try searching all mail.`}
         </p>
       )}
 
@@ -572,9 +612,9 @@ export function MailView({
               because a visible list of 500 implies otherwise.
             */}
             <span className="hint selectbar__note">
-              {everywhere
+              {spansAll
                 ? 'Results come from every folder of every account, however many there are.'
-                : 'Searches cover the whole mailbox, not just what is loaded.'}
+                : 'Searches cover the whole folder, not just what is loaded.'}
             </span>
           </div>
 
