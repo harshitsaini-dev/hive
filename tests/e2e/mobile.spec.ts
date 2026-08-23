@@ -185,11 +185,21 @@ test('a checkbox can be tapped slightly off-centre', async ({ page }) => {
   await page.goto('/')
 
   const checkbox = page.locator('.message input[type="checkbox"]').first()
+
+  /*
+   * Scrolled into view first. `page.mouse.click` takes viewport coordinates
+   * and, unlike `locator.click`, does not scroll to reach anything — and the
+   * first message row sits below the fold on a 780px-tall phone. Without
+   * this the test was clicking empty space above the list, which failed or
+   * passed depending on nothing more meaningful than how tall the filter
+   * panel happened to render.
+   */
+  await checkbox.scrollIntoViewIfNeeded()
   const box = (await checkbox.boundingBox())!
 
-  // Ten pixels above and left of the drawn box — inside the intended target,
-  // outside the 22px square.
-  await page.mouse.click(box.x - 8, box.y - 8)
+  // Eight pixels to the left of the drawn box: outside the square, inside the
+  // intended target, and within the card's own padding.
+  await page.mouse.click(box.x - 8, box.y + box.height / 2)
   await expect(checkbox).toBeChecked()
 })
 
