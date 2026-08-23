@@ -27,10 +27,16 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
 - **Hardening** — API rate limiting; bodies never persisted; audit trail for
   every connect, disconnect, trash, restore, permanent delete, send and rule
   run.
+- **Mailbox analysis** — how much mail matches, how much of it carries a
+  file, and who sent it. The three totals and the per-mailbox chips are
+  filters that narrow everything below them; senders can be selected in bulk
+  and viewed or cleared. Runs survive closing the tab, are stored per user so
+  they appear on any device, and can be put on a daily or weekly schedule.
 - **UI** — landing page, left-sidebar app shell, three-way theme switching,
-  skeleton loading, custom 404/offline/500/403 screens, installable PWA.
+  skeleton loading, custom 404/offline/500/403 screens, installable PWA,
+  custom date picker, themed scrollbars, in-app confirmation dialogs.
 
-53 Playwright tests, green headed and headless. CI green.
+123 Playwright tests, green headed and headless. CI green.
 
 ## Local setup notes
 
@@ -50,6 +56,25 @@ cost, and refresh tokens no longer expire weekly the way they did in Testing
 mode. The trade is a 100-user cap and an unverified-app warning on the consent
 screen that every new user has to click past. See ADR 0002.
 
+## The economics that shape the mailbox features
+
+Worth stating once, because nearly every design decision in search and
+analysis follows from it:
+
+- **Counting is nearly free.** Message ids come back 500 to an API call, so
+  even a hundred-thousand-message query is a couple of hundred cheap calls and
+  the count is exact.
+- **Reading anything about a message is not.** Sender, subject and date each
+  need a metadata fetch — one request per message, against a quota of roughly
+  3,000 a minute. A page of 500 messages across three mailboxes is already
+  about half a minute's allowance.
+
+That is why the mail list paginates rather than loading everything (an
+auto-loading version was built and reverted the same day — it exhausted the
+quota within seconds), why the analysis states exact totals but reads senders
+only to a chosen depth, and why a finished analysis is persisted rather than
+recomputed.
+
 ## Known gaps
 
 - **Nothing writes to `message_index`.** Every search goes to Gmail. With the
@@ -61,7 +86,17 @@ screen that every new user has to click past. See ADR 0002.
   socket would be cross-origin and the session cookie would not go with it.
   Polling a job id through the existing proxy works and is what ships.
 - **Jobs live in memory.** Fine on one Render instance; if the API is ever
-  scaled out, a poll could reach a process that never heard of the job.
+  scaled out, a poll could reach a process that never heard of the job. The
+  same applies to the in-flight analysis registry that lets a reopened tab
+  reattach to a running scan.
+- **A cleared sender lingers in the stored analysis** until the next run. The
+  row disappears from the screen immediately; correcting the saved copy would
+  mean a write per cleared sender, and the figures are already a snapshot of a
+  mailbox that keeps moving.
+- **Scheduled analysis is capped by the same scan depth as a manual run.**
+  "Everything" on a very large mailbox can take hours of a per-minute quota,
+  which is exactly why the schedule exists — but it is unattended, so a
+  failure is only visible in the logs and as a stale timestamp.
 
 ## Live
 
@@ -71,7 +106,9 @@ screen that every new user has to click past. See ADR 0002.
 - **Login email:** Resend, from `Bee <no-reply@bee.harshitsaini.in>`
 
 Verified end to end on 2026-08-23: landing, privacy, terms, API proxy,
-database readiness, security headers, and a real login code delivered.
+database readiness, security headers, and a real login code delivered. The
+server applies outstanding migrations at boot, so a deploy no longer needs
+`npm run db:migrate` run by hand.
 
 `npm run test:live` runs browser smoke tests against the deployed site.
 Two pingers keep the Render instance awake so scheduled cleanup rules actually
@@ -82,9 +119,13 @@ fire — see `docs/04-deployment.md`.
 Nothing outstanding from the roadmap. Possible future work, in rough order of
 value:
 
-1. **The sync engine** that fills `message_index`, if search to Gmail ever
-   starts to feel slow. It needs a history cursor, a 30-day horizon and a full
-   re-index fallback, so it is real work for a benefit that is not felt yet.
+1. **The sync engine** that fills `message_index`. This is now the answer to
+   several separate complaints rather than a speculative optimisation: it
+   would make the sender breakdown instant instead of quota-bound, let the
+   mail list show a real total without a second query, and remove most of the
+   rate-limit pressure. It needs a history cursor, a horizon and a full
+   re-index fallback, so it is real work — but the case for it is no longer
+   theoretical.
 2. **Moving jobs to the database**, only if the API is ever scaled past one
    instance.
 3. **Verification**, only if the 100-user cap ever binds — and only after
