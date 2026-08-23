@@ -8,7 +8,13 @@ import { expect, test, type Page } from '@playwright/test'
  * worth pinning down with tests rather than eyeballing once.
  */
 
-test.use({ viewport: { width: 390, height: 780 }, hasTouch: true })
+/*
+ * `isMobile` as well as `hasTouch`, and the difference matters: without it
+ * Chromium still reports `pointer: fine`, so every rule in the touch-target
+ * media block is inert. The checkbox test below passed for months against a
+ * desktop pointer, proving nothing about the phones it was written for.
+ */
+test.use({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
 
 const ACCOUNT = {
   id: 'acc-1',
@@ -163,6 +169,46 @@ test('checkboxes stay square', async ({ page }) => {
 
   expect(box).not.toBeNull()
   expect(Math.abs((box?.width ?? 0) - (box?.height ?? 0))).toBeLessThan(2)
+})
+
+/*
+ * Square and 22px across is still small for a thumb. The rest of the target
+ * is a transparent pseudo-element, which is invisible to `boundingBox` — the
+ * only way to know it works is to tap where a thumb would actually land.
+ */
+test('a checkbox can be tapped slightly off-centre', async ({ page }) => {
+  await stub(page)
+  await page.goto('/')
+
+  const checkbox = page.locator('.message input[type="checkbox"]').first()
+  const box = (await checkbox.boundingBox())!
+
+  // Ten pixels above and left of the drawn box — inside the intended target,
+  // outside the 22px square.
+  await page.mouse.click(box.x - 8, box.y - 8)
+  await expect(checkbox).toBeChecked()
+})
+
+/*
+ * The other half of that bargain. An invisible 44px target around a control
+ * sitting next to another control can swallow its neighbour's taps, and the
+ * neighbour here is the whole message row.
+ */
+test('the enlarged target does not steal taps from the message row', async ({
+  page,
+}) => {
+  await stub(page)
+  await page.goto('/')
+
+  // Just inside the row's leading edge — the closest a real tap gets to the
+  // checkbox while plainly meaning "open this".
+  const row = page.getByRole('button', { name: /Test message/ })
+  await row.click({ position: { x: 3, y: 20 } })
+
+  await expect(page.locator('.reader')).toBeVisible()
+  await expect(
+    page.locator('.message input[type="checkbox"]').first(),
+  ).not.toBeChecked()
 })
 
 /*

@@ -71,6 +71,27 @@
     />
 
     <meta name="color-scheme" content="light dark" />
+    <script>
+      /*
+       * Catch Chrome's install prompt before anything else can miss it.
+       *
+       * `beforeinstallprompt` fires once, early — routinely before the app
+       * bundle has parsed, let alone before React has mounted a listener in
+       * an effect. Missing it is not harmless: the install button falls back
+       * to showing manual instructions, so the people whose browser would
+       * have installed in one click are the ones told to go hunting through
+       * menus. Held here, in the head, and handed to the button when it asks.
+       */
+      window.__hiveInstallPrompt = null
+      window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault()
+        window.__hiveInstallPrompt = event
+        window.dispatchEvent(new Event('hive:installable'))
+      })
+      window.addEventListener('appinstalled', function () {
+        window.__hiveInstallPrompt = null
+      })
+    </script>
   </head>
   <body>
     <div id="root"></div>

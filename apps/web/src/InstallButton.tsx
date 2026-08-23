@@ -72,6 +72,21 @@ const INSTRUCTIONS: Record<Platform, { title: string; steps: string[] }> = {
 }
 
 /**
+ * The prompt caught in `index.html`, before this component existed.
+ *
+ * Chrome fires `beforeinstallprompt` once and early — routinely before the
+ * bundle has parsed. A listener registered in an effect misses it, and the
+ * button then offers manual instructions to exactly the people whose browser
+ * would have installed in one click.
+ */
+function heldPrompt(): BeforeInstallPromptEvent | null {
+  return (
+    (window as { __hiveInstallPrompt?: BeforeInstallPromptEvent | null })
+      .__hiveInstallPrompt ?? null
+  )
+}
+
+/**
  * Offers to install Hive as an app.
  *
  * **It no longer hides when it cannot do the job itself.** The previous
@@ -92,7 +107,9 @@ export function InstallButton({
   className?: string
   label?: string
 }) {
-  const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(
+    heldPrompt,
+  )
   const [installed, setInstalled] = useState(isStandalone)
   const [showing, setShowing] = useState(false)
 
@@ -110,11 +127,17 @@ export function InstallButton({
       setShowing(false)
     }
 
+    // Both: the native event in case it fires late, and the signal from the
+    // head script for the far more common case where it already has.
+    const onHeld = () => setPrompt(heldPrompt())
+
     window.addEventListener('beforeinstallprompt', onAvailable)
+    window.addEventListener('hive:installable', onHeld)
     window.addEventListener('appinstalled', onInstalled)
 
     return () => {
       window.removeEventListener('beforeinstallprompt', onAvailable)
+      window.removeEventListener('hive:installable', onHeld)
       window.removeEventListener('appinstalled', onInstalled)
     }
   }, [])
@@ -154,6 +177,7 @@ export function InstallButton({
     // Single-use either way — Chrome fires a fresh one if the user becomes
     // eligible again.
     setPrompt(null)
+    ;(window as { __hiveInstallPrompt?: unknown }).__hiveInstallPrompt = null
     if (outcome === 'accepted') setInstalled(true)
   }
 

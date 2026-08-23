@@ -144,6 +144,44 @@ test.describe('installing Hive', () => {
     await expect(card.getByRole('button', { name: 'Install Hive' })).toBeVisible()
   })
 
+  /*
+   * The important half. Chrome fires `beforeinstallprompt` once and early —
+   * routinely before the bundle has parsed — so a listener registered in a
+   * React effect misses it, and the button then offers manual instructions to
+   * exactly the people whose browser would have installed in one click. The
+   * event is caught in the document head and handed over.
+   */
+  test('installs directly when the browser offers to', async ({ page }) => {
+    await page.addInitScript(() => {
+      // Fire it before anything React does, the way Chrome actually would.
+      window.addEventListener('load', () => {
+        const event = new Event('beforeinstallprompt') as Event & {
+          prompt: () => Promise<void>
+          userChoice: Promise<{ outcome: string }>
+        }
+        event.prompt = () => {
+          ;(window as { __promptShown?: boolean }).__promptShown = true
+          return Promise.resolve()
+        }
+        event.userChoice = Promise.resolve({ outcome: 'accepted' })
+        window.dispatchEvent(event)
+      })
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Install Hive' }).click()
+
+    // The browser's own prompt, and no instructions to go hunting through
+    // menus for something it was about to do itself.
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as { __promptShown?: boolean }).__promptShown),
+      )
+      .toBe(true)
+    await expect(page.getByRole('dialog')).toBeHidden()
+    await expect(page.getByText('Installed')).toBeVisible()
+  })
+
   test('explains how, when the browser will not do it in one click', async ({
     page,
   }) => {

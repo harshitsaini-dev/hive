@@ -525,21 +525,9 @@ body {
     min-height: 44px;
   }
 
-  /*
-   * Checkboxes and radios are square, and `min-height` alone was stretching
-   * them into 44px-tall slivers a sixteenth as wide — the boxes in the
-   * message list looked broken on every phone. They get a bigger box and the
-   * rest of the target as outset padding, which enlarges the tap area
-   * without changing the drawn shape or the layout around it.
-   */
-  input[type='checkbox'],
-  input[type='radio'] {
-    width: 1.35rem;
-    height: 1.35rem;
-    outline-offset: 2px;
-  }
-
-  /* The label wrapping it is the real target; give it room to be tapped. */
+  /* The label wrapping one is the real target; give it room to be tapped.
+     The boxes themselves are handled beside their own rules, further down —
+     an override up here loses to them on source order. */
   .checkline,
   .radioline {
     min-height: 44px;
@@ -2214,6 +2202,47 @@ input[type='radio'] {
 
 input[type='radio'] {
   border-radius: var(--radius-full);
+}
+
+/*
+ * Touch targets for the boxes themselves.
+ *
+ * Two separate mistakes were compounding here. The blanket
+ * `input { min-height: 44px }` in the touch block stretched a square control
+ * into a 44px-tall sliver a sixteenth as wide, so the boxes looked broken on
+ * every phone. Excluding them from that rule fixed the shape and left them
+ * 17px across — below the size at which taps reliably land.
+ *
+ * The override that was meant to fix *that* sat earlier in this file than the
+ * rules above and quietly lost on source order, which is why it appeared to
+ * do nothing. It lives here now, after them.
+ *
+ * The drawn box grows a little; the rest of the target comes from a
+ * transparent pseudo-element, so the tappable area reaches 44px without the
+ * checkbox visually bloating or pushing its neighbours around.
+ */
+@media (pointer: coarse) {
+  input[type='checkbox'],
+  input[type='radio'] {
+    position: relative;
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  /*
+   * Grown up, down and outward-left, but *not* to the right.
+   *
+   * A symmetric 44px target reached 11px into whatever sits beside the box,
+   * and in a message row that is the row itself — tapping near its leading
+   * edge to open a message ticked the checkbox instead. Vertical is where
+   * thumbs miss anyway; sideways there is a neighbour.
+   */
+  input[type='checkbox']::before,
+  input[type='radio']::before {
+    content: '';
+    position: absolute;
+    inset: -11px 0 -11px -11px;
+  }
 }
 
 input[type='checkbox']:checked,
