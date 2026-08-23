@@ -119,6 +119,16 @@ export function AppShell({
   const go = (next: ViewId) => {
     setView(next)
     setNavOpen(false)
+    /*
+     * Leaving for a nav destination also leaves the palette's search behind.
+     * The remount matters: clicking Inbox while already on Inbox changes no
+     * key of its own, so without it the seeded text would survive as a filter
+     * on top of the folder the user just asked for.
+     */
+    if (seededFilters) {
+      setSeededFilters(undefined)
+      setSearchSeed((n) => n + 1)
+    }
   }
 
   if (state.denied) {
@@ -182,6 +192,7 @@ export function AppShell({
         loading={state.loading}
         mode={view}
         initialFilters={seededFilters}
+        everywhere={seededFilters !== undefined}
       />
     )
   }

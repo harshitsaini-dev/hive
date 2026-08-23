@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type MessageRow } from '../api.js'
 import { ConfirmDestructive } from '../ConfirmDestructive.js'
-import { AlertIcon, MailIcon, TrashIcon } from '../Icons.js'
+import { AlertIcon, MailIcon, SearchIcon, TrashIcon } from '../Icons.js'
 import {
   buildQuery,
   EMPTY_FILTERS,
@@ -61,12 +61,19 @@ export function MailView({
   loading: accountsLoading,
   mode,
   initialFilters,
+  everywhere = false,
 }: {
   accounts: ConnectedAccount[]
   loading: boolean
   mode: 'inbox' | 'sent' | 'trash'
   /** Pre-applied filters, e.g. from the command palette. */
   initialFilters?: Filters
+  /**
+   * Search the whole mailbox rather than one folder. Set when the search came
+   * from the command palette, which showed results from everywhere — landing
+   * in an `in:inbox` view would silently drop most of what it just listed.
+   */
+  everywhere?: boolean
 }) {
   const [accountId, setAccountId] = useState('')
   const [filters, setFilters] = useState<Filters>(initialFilters ?? EMPTY_FILTERS)
@@ -102,8 +109,13 @@ export function MailView({
    * the latter matches everything outside the bin, so sent mail, drafts and
    * spam all showed up in the inbox together.
    */
-  const scope =
-    mode === 'trash' ? 'in:trash' : mode === 'sent' ? 'in:sent' : 'in:inbox'
+  const scope = everywhere
+    ? '-in:spam'
+    : mode === 'trash'
+      ? 'in:trash'
+      : mode === 'sent'
+        ? 'in:sent'
+        : 'in:inbox'
 
   const query = useMemo(
     () => [scope, buildQuery(applied)].filter(Boolean).join(' '),
@@ -332,10 +344,28 @@ export function MailView({
     <section className={reading ? 'view view--mail view--split' : 'view view--mail'}>
       <header className="view__head">
         <h1>
-          {mode === 'trash' ? <TrashIcon size={20} /> : <MailIcon size={20} />}
-          {mode === 'trash' ? 'Trash' : mode === 'sent' ? 'Sent' : 'Inbox'}
+          {everywhere ? (
+            <SearchIcon size={20} />
+          ) : mode === 'trash' ? (
+            <TrashIcon size={20} />
+          ) : (
+            <MailIcon size={20} />
+          )}
+          {everywhere
+            ? 'Search results'
+            : mode === 'trash'
+              ? 'Trash'
+              : mode === 'sent'
+                ? 'Sent'
+                : 'Inbox'}
         </h1>
-        {mode === 'trash' && (
+        {everywhere && (
+          <p className="hint">
+            Every folder of every connected mailbox — inbox, sent, archive and
+            trash. Pick a section on the left to leave the search.
+          </p>
+        )}
+        {!everywhere && mode === 'trash' && (
           <p className="hint">
             Gmail empties this automatically after thirty days.
           </p>
@@ -392,39 +422,23 @@ export function MailView({
         </ul>
       )}
 
-      {selected.size > 0 && (
+      {(selected.size > 0 || wholeQuery) && (
         <div className="bulkbar">
           <div className="bulkbar__count">
             <span>
               {wholeQuery
-                ? `${targetCount} selected — everything matching this search`
-                : `${selected.size} selected`}
+                ? `${targetCount.toLocaleString()} selected — everything matching this search`
+                : `${selected.size.toLocaleString()} selected on this page`}
             </span>
-
-            {/*
-              The escape hatch from "what is loaded" to "the whole search",
-              offered once everything on screen is ticked — the moment someone
-              is obviously trying to select more than they can see.
-            */}
-            {!wholeQuery && allSelected && (
-              <button
-                type="button"
-                className="link"
-                disabled={resolving || pending !== null}
-                onClick={() => void selectWholeQuery()}
-              >
-                {resolving ? 'Counting…' : 'Select everything matching this search'}
-              </button>
-            )}
 
             {wholeQuery && (
               <button
                 type="button"
-                className="link"
+                className="btn-quiet"
                 disabled={pending !== null}
                 onClick={() => setWholeQuery(null)}
               >
-                Just what is loaded instead
+                Just this page instead
               </button>
             )}
           </div>
@@ -518,30 +532,51 @@ export function MailView({
 
       {!busy && load.messages.length > 0 && (
         <>
-          <label className="selectall">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={(event) =>
-                setSelected(
-                  event.target.checked
-                    ? new Set(load.messages.map((m) => m.gmailMessageId))
-                    : new Set(),
-                )
-              }
-            />
-            Select all {load.messages.length.toLocaleString()} loaded
-            {/*
-              Said explicitly, because "1,264 loaded" reads as "that is all of
-              them" when a mailbox holds 1,323. Each account returns one page
-              at a time, so a merged count is a floor, not a total.
-            */}
-            {load.nextPageToken && (
-              <span className="hint selectall__more">
-                — this is the first page of each mailbox, and there are more
+          {/*
+            Two explicit choices rather than one ambiguous "select all".
+            "Select all 1,264 loaded" read as "that is everything" when the
+            mailbox held 1,323 — the loaded count is a floor, not a total, so
+            it is no longer offered as the headline number.
+          */}
+          <div className="selectbar">
+            <label className="selectall">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={(event) =>
+                  setSelected(
+                    event.target.checked
+                      ? new Set(load.messages.map((m) => m.gmailMessageId))
+                      : new Set(),
+                  )
+                }
+              />
+              Select page
+              <span className="hint">
+                ({load.messages.length.toLocaleString()} shown)
               </span>
-            )}
-          </label>
+            </label>
+
+            <button
+              type="button"
+              className="btn-quiet"
+              disabled={resolving || pending !== null}
+              onClick={() => void selectWholeQuery()}
+            >
+              {resolving ? 'Counting…' : 'Select all matching'}
+            </button>
+
+            {/*
+              Searches go to Gmail, not to what is on screen, so a term that
+              appears only in message 9,000 still finds it. Worth saying,
+              because a visible list of 500 implies otherwise.
+            */}
+            <span className="hint selectbar__note">
+              {everywhere
+                ? 'Results come from every folder of every account, however many there are.'
+                : 'Searches cover the whole mailbox, not just what is loaded.'}
+            </span>
+          </div>
 
           <ul className="messages">
             {load.messages.map((message) => {

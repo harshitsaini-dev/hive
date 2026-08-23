@@ -30,8 +30,13 @@ export const messagesRouter: Router = Router()
  * Not a Gmail limit — a deliberate blast-radius cap. A mistyped query like
  * `older_than:1d` matching an entire mailbox should hit a wall the user has to
  * acknowledge, rather than quietly processing everything.
+ *
+ * Ten thousand rather than five: real mailboxes are that size, and stopping
+ * halfway just made people run the same cleanup twice. The wall still exists,
+ * the UI still says when a search exceeded it, and permanent deletion still
+ * needs a typed confirmation showing the exact count.
  */
-const MAX_BULK = 5000
+const MAX_BULK = 10_000
 
 /**
  * A page can be large — the point of the product is working through thousands

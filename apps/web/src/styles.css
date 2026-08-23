@@ -2629,8 +2629,28 @@ a.link-plain {
 /* The "there are more" note beside the select-all checkbox. */
 .selectall {
   flex-wrap: wrap;
+  margin-bottom: 0;
 }
 
 .selectall__more {
   font-size: 0.82rem;
+}
+
+/*
+ * Select page / select all sit side by side, because the difference between
+ * them is the whole point — one is what you can see, the other is what the
+ * search actually matches.
+ */
+.selectbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+/* Pushed to its own line on wide screens so the two controls stay adjacent. */
+.selectbar__note {
+  flex-basis: 100%;
+  font-size: 0.78rem;
 }

@@ -208,8 +208,16 @@ export function CommandPalette({
         </div>
 
         <div className="palette__foot">
+          {/*
+            The palette searches every mailbox with no folder scope, so these
+            are the top few of however many matched — say so, or 25 rows read
+            as "that is all there is".
+          */}
           <span className="hint">
-            <kbd>Enter</kbd> to open these in the inbox with filters
+            {results && results.length >= RESULT_LIMIT
+              ? `Top ${RESULT_LIMIT} of everything that matched — `
+              : ''}
+            <kbd>Enter</kbd> to see them all
           </span>
           <button
             type="button"

@@ -16,7 +16,7 @@
     "dev:server": "npm run dev --workspace @hive/server",
     "dev:web": "npm run dev --workspace @hive/web",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "tsc --build",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:migrate": "npm run migrate --workspace @hive/db",

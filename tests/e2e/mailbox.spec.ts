@@ -153,9 +153,9 @@ test.describe('mailbox', () => {
   test('selecting mail reveals bulk actions', async ({ page }) => {
     await expect(page.getByText(/selected/)).toBeHidden()
 
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
 
-    await expect(page.getByText('3 selected', { exact: true })).toBeVisible()
+    await expect(page.getByText('3 selected on this page')).toBeVisible()
     await expect(page.getByRole('button', { name: /Move \d+ to Trash/ })).toBeVisible()
     // Permanent deletion is not offered from the inbox at all.
     await expect(page.getByRole('button', { name: /Delete \d+ forever/ })).toBeHidden()
@@ -163,7 +163,7 @@ test.describe('mailbox', () => {
 
   test('the Trash tab offers restore and delete forever', async ({ page }) => {
     await page.getByRole('button', { name: 'Trash' }).click()
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
 
     await expect(page.getByRole('button', { name: /Restore \d+/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Delete \d+ forever/ })).toBeVisible()
@@ -177,7 +177,7 @@ test.describe('permanent deletion', () => {
     await page.goto('/')
 
     await page.getByRole('button', { name: 'Trash' }).click()
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
 
     const dialog = page.getByRole('alertdialog')
@@ -203,7 +203,7 @@ test.describe('permanent deletion', () => {
     await page.goto('/')
 
     await page.getByRole('button', { name: 'Trash' }).click()
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
 
     await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
     await page.keyboard.press('Escape')
@@ -221,7 +221,7 @@ test.describe('permanent deletion', () => {
     await page.goto('/')
 
     await page.getByRole('button', { name: 'Trash' }).click()
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
 
     const dialog = page.getByRole('alertdialog')
@@ -243,7 +243,7 @@ test.describe('permanent deletion', () => {
     await page.goto('/')
 
     await page.getByRole('button', { name: 'Trash' }).click()
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page.getByRole('button', { name: /Delete \d+ forever/ }).click()
 
     const dialog = page.getByRole('alertdialog')
@@ -268,29 +268,31 @@ test.describe('permanent deletion', () => {
  * be the count acted on.
  */
 test.describe('selecting a whole search', () => {
-  test('is only offered once the page is fully selected', async ({ page }) => {
+  test('is offered alongside select-page, not hidden behind it', async ({
+    page,
+  }) => {
     await stubApi(page)
     await page.goto('/')
 
-    const expand = page.getByRole('button', {
-      name: /Select everything matching this search/,
-    })
-
-    // One message ticked is not a signal that someone wants all of them.
-    await page.locator('.message input[type="checkbox"]').first().check()
-    await expect(expand).toBeHidden()
-
-    await page.getByLabel(/Select all 3/).check()
-    await expect(expand).toBeVisible()
+    /*
+     * Both choices are present from the start. Hiding "select all" until the
+     * page was fully ticked made the two look like one escalating control,
+     * which is exactly the confusion that a loaded count of 1,264 against a
+     * real 1,323 caused.
+     */
+    await expect(page.getByLabel(/Select page/)).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: /Select all matching/ }),
+    ).toBeEnabled()
   })
 
   test('acts on every match, not just the visible page', async ({ page }) => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page
-      .getByRole('button', { name: /Select everything matching this search/ })
+      .getByRole('button', { name: /Select all matching/ })
       .click()
 
     // The real count replaces the page count everywhere it is shown.
@@ -312,13 +314,13 @@ test.describe('selecting a whole search', () => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page
-      .getByRole('button', { name: /Select everything matching this search/ })
+      .getByRole('button', { name: /Select all matching/ })
       .click()
     await expect(page.getByText(/137 selected/)).toBeVisible()
 
-    await page.getByRole('button', { name: /Just what is loaded/ }).click()
+    await page.getByRole('button', { name: /Just this page instead/ }).click()
     await expect(page.getByText(/3 selected/)).toBeVisible()
 
     await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
@@ -345,9 +347,9 @@ test.describe('selecting a whole search', () => {
     )
 
     await page.goto('/')
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page
-      .getByRole('button', { name: /Select everything matching this search/ })
+      .getByRole('button', { name: /Select all matching/ })
       .click()
 
     // Said before the action, not discovered after it.
@@ -362,9 +364,9 @@ test.describe('selecting a whole search', () => {
     await page.goto('/')
 
     await page.getByRole('button', { name: 'Trash' }).click()
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page
-      .getByRole('button', { name: /Select everything matching this search/ })
+      .getByRole('button', { name: /Select all matching/ })
       .click()
 
     await page.getByRole('button', { name: /Delete 137 forever/ }).click()
@@ -439,9 +441,9 @@ test.describe('bulk progress', () => {
     })
 
     await page.goto('/')
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page
-      .getByRole('button', { name: /Select everything matching this search/ })
+      .getByRole('button', { name: /Select all matching/ })
       .click()
     await expect(page.getByText(/900 selected/)).toBeVisible()
 
@@ -471,7 +473,7 @@ test.describe('bulk progress', () => {
     })
 
     await page.goto('/')
-    await page.getByLabel(/Select all 3/).check()
+    await page.getByLabel(/Select page/).check()
     await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
 
     await expect(page.getByText(/Moved to Trash: 3/)).toBeVisible()

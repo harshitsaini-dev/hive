@@ -117,7 +117,7 @@ test.describe('several mailboxes', () => {
     await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('Select all 3 loaded')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
 
     // 12:40 (acc-1), 12:35 (acc-2), 12:20 (acc-1) — interleaved, not grouped.
     const subjects = await page.locator('.message__subject').allInnerTexts()
@@ -137,7 +137,7 @@ test.describe('several mailboxes', () => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await page.getByLabel('Select all 3 loaded').check()
+    await page.getByLabel(/Select page/).check()
     await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
 
     await expect(page.getByText(/Moved to Trash: 3/)).toBeVisible()
@@ -163,10 +163,10 @@ test.describe('several mailboxes', () => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('Select all 3 loaded')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
     await page.getByRole('button', { name: /Load 500 more/ }).click()
 
-    await expect(page.getByText('Select all 4 loaded')).toBeVisible()
+    await expect(page.getByText('(4 shown)')).toBeVisible()
 
     // The follow-up request hands the cursor straight back, unmodified.
     const followUp = seen.searchUrls.at(-1) ?? ''
@@ -178,11 +178,70 @@ test.describe('several mailboxes', () => {
     expect(subjects.at(-1)).toBe('Message 1-3')
   })
 
+  /*
+   * The palette lists results from every folder of every mailbox, so handing
+   * its text to an `in:inbox` view would silently drop most of what it just
+   * showed. A user searching for a message they archived last year has to end
+   * up looking at it, not at an empty inbox.
+   */
+  test('a palette search stays unscoped when it opens in the mail view', async ({
+    page,
+  }) => {
+    const seen = await stub(page)
+    await page.goto('/')
+    await expect(page.getByText('(3 shown)')).toBeVisible()
+
+    await page.keyboard.press('Control+k')
+    await page.getByPlaceholder('Search every connected account').fill('invoice')
+
+    // The palette itself asks Gmail for everything, with no folder scope.
+    await expect
+      .poll(() => decodeURIComponent(seen.searchUrls.at(-1) ?? ''))
+      .toContain('q=invoice')
+    expect(decodeURIComponent(seen.searchUrls.at(-1) ?? '')).not.toContain(
+      'in:inbox',
+    )
+
+    await page.getByRole('button', { name: 'See all results' }).click()
+
+    // And so does the view it hands off to.
+    await expect
+      .poll(() => decodeURIComponent(seen.searchUrls.at(-1) ?? ''))
+      .toContain('invoice')
+    expect(decodeURIComponent(seen.searchUrls.at(-1) ?? '')).not.toContain(
+      'in:inbox',
+    )
+  })
+
+  test('leaving for a nav destination drops the palette search', async ({
+    page,
+  }) => {
+    const seen = await stub(page)
+    await page.goto('/')
+    await expect(page.getByText('(3 shown)')).toBeVisible()
+
+    await page.keyboard.press('Control+k')
+    await page.getByPlaceholder('Search every connected account').fill('invoice')
+    await page.getByRole('button', { name: 'See all results' }).click()
+    await expect
+      .poll(() => decodeURIComponent(seen.searchUrls.at(-1) ?? ''))
+      .toContain('invoice')
+
+    // Clicking Inbox means Inbox, not "the everywhere-search I just ran".
+    await page.getByRole('button', { name: 'Inbox' }).click()
+    await expect
+      .poll(() => decodeURIComponent(seen.searchUrls.at(-1) ?? ''))
+      .toContain('in:inbox')
+    expect(decodeURIComponent(seen.searchUrls.at(-1) ?? '')).not.toContain(
+      'invoice',
+    )
+  })
+
   test('can narrow the search to one mailbox', async ({ page }) => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await expect(page.getByText('Select all 3 loaded')).toBeVisible()
+    await expect(page.getByText('(3 shown)')).toBeVisible()
 
     // exact, or the sidebar's 'Accounts' nav item matches too.
     await page.getByRole('button', { name: 'Account', exact: true }).click()
