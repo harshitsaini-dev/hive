@@ -110,7 +110,13 @@ test.describe('signed in', () => {
     await page.getByRole('button', { name: 'Sign in' }).click()
 
     await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()
-    await expect(page.getByText(email)).toBeVisible()
+    /*
+     * Scoped to the bar. The signed-in address is rendered twice — once
+     * there and once in the nav drawer — because the bar has no room for it
+     * on a phone and a single element cannot live under two parents. Only one
+     * copy is ever displayed; both are in the DOM.
+     */
+    await expect(page.getByRole('banner').getByText(email)).toBeVisible()
     // With no mailbox connected, every view points at the one action that
     // fixes that rather than rendering an empty inbox.
     await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()

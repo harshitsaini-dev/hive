@@ -1231,6 +1231,12 @@ textarea:focus-visible {
   margin-top: 0.3rem;
 }
 
+/* The drawer's own copy of the session controls. Desktop keeps them in the
+   bar, where there is room. */
+.app__nav-foot {
+  display: none;
+}
+
 @media (max-width: 48rem) {
   /*
    * Below this width the sidebar would eat most of the screen, so it becomes
@@ -1240,6 +1246,52 @@ textarea:focus-visible {
   .app__menu {
     display: inline-flex;
     order: -1;
+  }
+
+  /*
+   * The bar carries three things and no more: get out, where am I, find
+   * something. Theme, address and sign-out went below it on a real phone and
+   * took the bar to three lines — the mail itself started below the fold.
+   */
+  .app__bar {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    padding-top: max(0.6rem, env(safe-area-inset-top));
+  }
+
+  .app__bar .landing__mark {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app__bar-actions {
+    display: none;
+  }
+
+  .app__nav-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    align-items: stretch;
+    margin-top: auto;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Full width in a narrow drawer, rather than three cramped segments. */
+  .app__nav-foot .theme-toggle {
+    width: 100%;
+  }
+
+  .app__nav-foot .app__user {
+    overflow: hidden;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
   }
 
   /*
@@ -1289,10 +1341,6 @@ textarea:focus-visible {
     padding: 1.25rem 1rem 3rem;
   }
 
-  /* The address is the least useful thing in a cramped bar. */
-  .app__user {
-    display: none;
-  }
 }
 
 /* ---- skeletons ----------------------------------------------------------- */
@@ -3486,5 +3534,108 @@ a.link-plain {
   .installcard__button {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* ---- collapsible filters ------------------------------------------------- */
+
+/* Desktop keeps everything on screen, so the toggle has nothing to toggle. */
+.filters__toggle {
+  display: none;
+}
+
+.filters__rest {
+  display: contents;
+}
+
+.filters__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  margin-left: 0.35rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+@media (max-width: 48rem) {
+  .filters__toggle {
+    display: inline-flex;
+  }
+
+  /*
+   * `display: contents` on the open state so the rows keep participating in
+   * the form's own layout — wrapping them in a real box would give the
+   * controls a second, narrower container to fight over.
+   */
+  .filters__rest[data-open='false'] {
+    display: none;
+  }
+
+  .filters__rest[data-open='true'] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  /* One row of controls at a time is plenty on a phone. */
+  .filters__row .select,
+  .filters__row .datepicker,
+  .filters__from {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---- narrow-screen density ----------------------------------------------- */
+
+/*
+ * Everything above the first message is overhead, and on a phone it was
+ * adding up: a title, a button under it, a filter panel, a select bar and a
+ * note — four hundred pixels of chrome before a single email. None of it is
+ * wrong; it was just laid out as though vertical space were free.
+ */
+@media (max-width: 48rem) {
+  .view__head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.75rem;
+    align-items: baseline;
+    margin-bottom: 0.85rem;
+  }
+
+  .view__head h1 {
+    font-size: 1.25rem;
+  }
+
+  /* Beside the title rather than under it. */
+  .view__analyse {
+    margin-top: 0;
+  }
+
+  .app__main {
+    padding-top: 0.9rem;
+  }
+
+  .filters__wrap {
+    margin-bottom: 0.75rem;
+  }
+
+  .selectbar {
+    gap: 0.4rem 0.6rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /*
+   * The reach note is worth saying once, not on every screen. The header
+   * already states which reach a search used, and that line is right above
+   * this one on a narrow layout.
+   */
+  .selectbar__note {
+    display: none;
   }
 }

@@ -179,10 +179,39 @@ export function MailFilters({
   submitLabel?: string
 }) {
   const [showRaw, setShowRaw] = useState(filters.raw !== '')
+
+  /*
+   * Collapsed on a phone, open on a desktop.
+   *
+   * Eight controls stacked one per line filled an entire phone screen before
+   * a single message was visible — the filters became the page and the mail
+   * became something below it. On a desktop they sit in two or three rows and
+   * cost nothing, so the default follows the width rather than being a
+   * preference nobody asked to express.
+   */
+  const [open, setOpen] = useState(
+    () => window.matchMedia('(min-width: 48rem)').matches,
+  )
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     onChange({ ...filters, [key]: value })
 
   const compiled = buildQuery(filters)
+
+  /*
+   * How many of the hidden controls are actually set. Collapsing them is only
+   * safe if a collapsed panel cannot hide a filter that is silently shaping
+   * the results — the free-text box stays visible, so it is excluded.
+   */
+  const activeCount = [
+    filters.from.trim() !== '',
+    filters.olderThan !== '',
+    filters.category !== '',
+    filters.after !== '',
+    filters.before !== '',
+    filters.hasAttachment,
+    filters.unreadOnly,
+    filters.raw.trim() !== '',
+  ].filter(Boolean).length
 
   return (
     <form
@@ -208,8 +237,26 @@ export function MailFilters({
         </div>
 
         <button type="submit">{submitLabel}</button>
+
+        {/*
+          Only where the rest is hidden. On a desktop the controls are already
+          on screen and a button to reveal them would be a button to do
+          nothing.
+        */}
+        <button
+          type="button"
+          className="btn-quiet filters__toggle"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? 'Fewer filters' : 'More filters'}
+          {!open && activeCount > 0 && (
+            <span className="filters__badge">{activeCount}</span>
+          )}
+        </button>
       </div>
 
+      <div className="filters__rest" data-open={open}>
       <div className="filters__row">
         <label htmlFor="f-from" className="sr-only">
           From
@@ -330,6 +377,7 @@ export function MailFilters({
           </p>
         </div>
       )}
+      </div>
     </form>
   )
 }

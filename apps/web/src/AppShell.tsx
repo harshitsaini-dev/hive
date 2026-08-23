@@ -205,6 +205,26 @@ export function AppShell({
     )
   }
 
+  /*
+   * One definition, two homes. See the note where it is placed.
+   */
+  const session = (
+    <>
+      <ThemeToggle />
+      <span className="hint app__user">{user.email}</span>
+      <button
+        type="button"
+        className="link icon-btn"
+        onClick={() => {
+          void api.logout().finally(onSignedOut)
+        }}
+      >
+        <LogoutIcon size={15} />
+        Sign out
+      </button>
+    </>
+  )
+
   return (
     <div className="app">
       <header className="app__bar">
@@ -232,34 +252,33 @@ export function AppShell({
           Hive
         </span>
 
-        <div className="app__bar-actions">
-          {/*
-            A visible affordance for the shortcut. A keyboard-only feature is
-            a feature most people never discover.
-          */}
-          <button
-            type="button"
-            className="searchtrigger"
-            onClick={() => setPaletteOpen(true)}
-          >
-            <SearchIcon size={15} />
-            <span className="searchtrigger__label">Search all mail</span>
-            <kbd>Ctrl K</kbd>
-          </button>
+        {/*
+          A visible affordance for the shortcut. A keyboard-only feature is a
+          feature most people never discover.
+        */}
+        <button
+          type="button"
+          className="searchtrigger"
+          onClick={() => setPaletteOpen(true)}
+        >
+          <SearchIcon size={15} />
+          <span className="searchtrigger__label">Search all mail</span>
+          <kbd>Ctrl K</kbd>
+        </button>
 
-          <ThemeToggle />
-          <span className="hint app__user">{user.email}</span>
-          <button
-            type="button"
-            className="link icon-btn"
-            onClick={() => {
-              void api.logout().finally(onSignedOut)
-            }}
-          >
-            <LogoutIcon size={15} />
-            Sign out
-          </button>
-        </div>
+        {/*
+          Theme, identity and sign-out belong in a corner on a desktop and
+          nowhere near the top of a phone. Three of them plus a search box
+          wrapped the bar onto three lines and pushed the actual mail below
+          the fold — so on a narrow screen they move into the drawer, which is
+          where the rest of the chrome already lives.
+
+          Rendered in both places and hidden with `display: none`, which takes
+          the copy out of the accessibility tree as well as the layout. The
+          duplication is real; a single element cannot live under two parents,
+          and moving it with JavaScript on resize is worse.
+        */}
+        <div className="app__bar-actions">{session}</div>
       </header>
 
       <div className="app__body">
@@ -284,6 +303,8 @@ export function AppShell({
               )}
             </button>
           ))}
+
+          <div className="app__nav-foot">{session}</div>
         </nav>
 
         <main className="app__main">{body}</main>

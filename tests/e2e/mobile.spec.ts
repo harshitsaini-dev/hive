@@ -244,3 +244,86 @@ test.describe('on a desktop width', () => {
     await expect(page.locator('.app__menu')).toBeHidden()
   })
 })
+
+/*
+ * From a real phone: the bar wrapped onto three lines and the filter panel
+ * filled the screen, so the first message sat four hundred pixels down. None
+ * of it was individually wrong — it was laid out as though vertical space
+ * were free.
+ */
+test.describe('vertical space on a phone', () => {
+  test('the chrome above the first message stays modest', async ({ page }) => {
+    await stub(page)
+    await page.goto('/')
+
+    const bar = (await page.locator('.app__bar').boundingBox())!
+    const first = (await page.locator('.message').first().boundingBox())!
+
+    // One line, not three.
+    expect(bar.height).toBeLessThan(90)
+    // And the mail itself is on screen rather than below the fold.
+    expect(first.y).toBeLessThan(420)
+  })
+
+  test('theme and sign-out live in the drawer, not the bar', async ({ page }) => {
+    await stub(page)
+    await page.goto('/')
+
+    // Not in the bar: three of these plus a search box is what made it wrap.
+    await expect(page.locator('.app__bar-actions')).toBeHidden()
+    await expect(page.getByRole('button', { name: /Sign out/ })).toBeHidden()
+
+    await page.getByRole('button', { name: 'Menu', exact: true }).click()
+    await expect(page.getByRole('button', { name: /Sign out/ })).toBeVisible()
+    await expect(page.getByRole('radio', { name: 'Dark' })).toBeVisible()
+  })
+
+  test('the filters start collapsed, and say how many are set', async ({
+    page,
+  }) => {
+    await stub(page)
+    await page.goto('/')
+
+    // The text box stays; a collapsed panel must not hide the thing you type
+    // into. Everything else is behind the toggle.
+    await expect(
+      page.getByPlaceholder('Search words in subject or body'),
+    ).toBeVisible()
+    await expect(page.getByPlaceholder('From (name or address)')).toBeHidden()
+
+    await page.getByRole('button', { name: /More filters/ }).click()
+    await expect(page.getByPlaceholder('From (name or address)')).toBeVisible()
+
+    await page.getByLabel('Has attachment').check()
+    await page.getByRole('button', { name: /Fewer filters/ }).click()
+
+    /*
+     * Collapsing is only safe if a hidden filter cannot silently shape the
+     * results without saying so.
+     */
+    await expect(page.getByRole('button', { name: /More filters/ })).toContainText(
+      '1',
+    )
+  })
+})
+
+test.describe('the desktop layout is untouched', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, isMobile: false })
+
+  test('keeps theme and sign-out in the bar', async ({ page }) => {
+    await stub(page)
+    await page.goto('/')
+
+    await expect(page.locator('.app__bar-actions')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Sign out/ })).toBeVisible()
+    await expect(page.locator('.app__nav-foot')).toBeHidden()
+  })
+
+  test('shows every filter without a disclosure', async ({ page }) => {
+    await stub(page)
+    await page.goto('/')
+
+    await expect(page.getByPlaceholder('From (name or address)')).toBeVisible()
+    await expect(page.getByRole('button', { name: /More filters/ })).toBeHidden()
+  })
+})
