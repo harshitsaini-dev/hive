@@ -13,6 +13,21 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /*
+   * Nothing anyone else wrote may set the width of this page.
+   *
+   * Almost every string on screen comes from somewhere else — a sender's
+   * name, a subject, an address, a saved query — and one of them without a
+   * space in it is enough. An unbreakable token overflows its box, the
+   * document grows wider than the viewport, and a phone browser responds by
+   * zooming the *whole page* out to fit: every screen suddenly shrunken with
+   * a strip of dead space down one side, from a single row that may not even
+   * be visible.
+   *
+   * `break-word` rather than `anywhere`: it only breaks a word that cannot
+   * fit on a line of its own, so ordinary text wraps exactly as before.
+   */
+  overflow-wrap: break-word;
 }
 
 /*
@@ -868,6 +883,27 @@ textarea {
   justify-content: space-between;
 }
 
+/*
+ * The sender name, kept to one line — and, more importantly, kept from
+ * setting the width of the entire application.
+ *
+ * A flex item will not shrink below its content by default, and a sender name
+ * has no spaces to break at. One address like
+ * `no-reply.long.identifier@some-service.example` in a page of five hundred
+ * made the row wider than the phone, which made the *document* wider than the
+ * viewport, which made the browser zoom the whole page out to fit. Every other
+ * screen then looked shrunken, with a strip of dead space down the right —
+ * from one row, most likely off-screen at the time.
+ *
+ * `min-width: 0` is the part that matters. The ellipsis is just manners.
+ */
+.message__top strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message__date {
   flex-shrink: 0;
   color: var(--muted);
@@ -885,6 +921,13 @@ textarea {
 .message__subject,
 .message__snippet,
 .message__account {
+  /*
+   * `min-width: 0` alongside the ellipsis, for the same reason as the sender
+   * above: these are flex items too, and an unbreakable string in any of them
+   * would push the row — and with it the page — past the viewport. The
+   * ellipsis alone does not do that; it needs something to shrink into.
+   */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3385,9 +3428,40 @@ a.link-plain {
 
 .accounts__who {
   display: flex;
+  flex: 1;
+  /*
+   * The third time this exact thing: a flex item will not shrink below its
+   * content, so `overflow-wrap` on the page never gets a narrow box to wrap
+   * into and a long address widens the row, the document, and eventually the
+   * browser's idea of how far to zoom out.
+   */
+  min-width: 0;
   flex-direction: column;
   gap: 0.2rem;
-  align-items: flex-start;
+  /*
+   * Stretched, not `flex-start`.
+   *
+   * `flex-start` sizes each line to its own content, so a long address made
+   * every child as wide as itself and the column as wide as the widest child
+   * — at which point `min-width: 0` and `overflow-wrap` had nothing to bite
+   * on, because the box was already as big as the text. Stretching gives each
+   * line the column's width, and the column takes the width the row allows.
+   */
+  align-items: stretch;
+}
+
+/*
+ * `anywhere`, not `break-word`.
+ *
+ * They wrap identically. They differ in the one way that matters here:
+ * `break-word` leaves the element's *min-content* width equal to its longest
+ * unbreakable word, and a flex item's automatic minimum is its min-content —
+ * so the row stayed as wide as the address no matter what shrink factors said.
+ * `anywhere` lets min-content collapse, which is what finally allows the
+ * column to be narrower than the string inside it.
+ */
+.accounts__who > * {
+  overflow-wrap: anywhere;
 }
 
 .accounts__sync {
