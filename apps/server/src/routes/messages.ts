@@ -4,6 +4,7 @@ import {
   countIndexMatches,
   deleteIndexedMessages,
   findAnalysisRun,
+  findSentDisplayName,
   getIndexedByIds,
   moveIndexedLabels,
   listAccountsForOwner,
@@ -1084,16 +1085,31 @@ messagesRouter.post(
       /*
        * The name this mail is sent under.
        *
-       * What Hive was told, if anything, and otherwise what Gmail reports for
-       * this address. Without either, mail sent through Hive shows a bare
-       * address while the same person's mail sent from Gmail shows their
-       * name — the two look like different senders, and recipients saw the
-       * local part of the address where a person should have been.
+       * Three sources, in descending order of authority: what Google says
+       * this person is called, what Gmail has on the matching `sendAs` alias,
+       * and — for a mailbox connected before the profile scope existed — the
+       * name it has been sending under all along, read off the `From` header
+       * of its own indexed mail.
+       *
+       * Without any of them, Gmail falls back to the local part of the
+       * address and recipients see `harshitsaini.dev` where a person should
+       * be. Nothing here asks the user to set anything up.
        */
       const displayName =
-        session.account.display_name ||
+        session.account.sender_name ||
         (await getSendAsDisplayName(
           session.accessToken,
+          session.account.gmail_address,
+        )) ||
+        /*
+         * Last resort, and the one that needs nothing set up: the name this
+         * mailbox has been sending under all along, read off the `From`
+         * header of its own indexed mail. If Gmail's settings call gives
+         * nothing — and on these accounts it does — the answer is still
+         * sitting in every message the user has ever sent.
+         */
+        (await findSentDisplayName(
+          session.account.id,
           session.account.gmail_address,
         ))
 

@@ -215,16 +215,16 @@ test.describe('index progress', () => {
 
 /*
  * Reported: mail sent through Hive arrived as `harshitsaini.dev` where a name
- * should have been. Hive asks Gmail for the display name on the matching
- * `sendAs` alias, which is the right answer when there is one — and an alias
- * with no name of its own makes Gmail fall back to the local part of the
- * address. There is nothing to infer harder about; the person knows what they
- * want to be called.
+ * should have been.
+ *
+ * Nothing here is configurable, deliberately. Hive works the name out — from
+ * Google's own record of who owns the mailbox, from Gmail's `sendAs` alias,
+ * or from the `From` header of mail the account has already sent. Asking the
+ * user to type their own name in would be setup for something that should
+ * simply work.
  */
 test.describe('the name on outgoing mail', () => {
-  test('says what recipients will see, and lets it be set', async ({ page }) => {
-    const saved: unknown[] = []
-
+  async function stubAccounts(page: Page, senderName: string | null) {
     await page.route('**/api/auth/me', (route) =>
       route.fulfill({
         status: 200,
@@ -234,13 +234,11 @@ test.describe('the name on outgoing mail', () => {
         }),
       }),
     )
-
-    let displayName: string | null = null
     await page.route('**/api/accounts', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ accounts: [{ ...BASE, displayName }] }),
+        body: JSON.stringify({ accounts: [{ ...BASE, senderName }] }),
       }),
     )
     await page.route('**/api/messages?**', (route) =>
@@ -255,31 +253,27 @@ test.describe('the name on outgoing mail', () => {
         }),
       }),
     )
-    await page.route('**/api/accounts/*/display-name', (route) => {
-      const body = route.request().postDataJSON() as { displayName: string }
-      saved.push(body)
-      displayName = body.displayName || null
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ displayName }),
-      })
-    })
+  }
 
+  test('states the name recipients will see', async ({ page }) => {
+    await stubAccounts(page, 'Harshit')
     await openAccounts(page)
 
-    // Before: no promise is made beyond "whatever Gmail has".
-    await expect(
-      page.getByText('Sends under the name set in Gmail for this address'),
-    ).toBeVisible()
-
-    await page.getByRole('button', { name: 'Set name' }).click()
-    await page.getByLabel('Display name').fill('Harshit')
-    await page.getByRole('button', { name: 'Save' }).click()
-
-    expect(saved).toEqual([{ displayName: 'Harshit' }])
     await expect(
       page.getByText('Sends as Harshit <first@example.test>'),
     ).toBeVisible()
+  })
+
+  /*
+   * And when nothing could be worked out, it says the bare address rather
+   * than implying a name is there. Gmail will show the local part; the page
+   * should not pretend otherwise.
+   */
+  test('says the bare address when no name is known', async ({ page }) => {
+    await stubAccounts(page, null)
+    await openAccounts(page)
+
+    await expect(page.getByText('Sends as first@example.test')).toBeVisible()
+    await expect(page.getByRole('button', { name: /name/i })).toBeHidden()
   })
 })

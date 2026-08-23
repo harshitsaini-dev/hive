@@ -19,6 +19,17 @@ export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.send',
   'https://mail.google.com/',
+  /*
+   * The account holder's name, and nothing else about them.
+   *
+   * Non-sensitive, and the only reliable answer to what to put in a `From`
+   * header. Gmail's own `sendAs` settings are the obvious source and are
+   * simply empty on some accounts, which leaves recipients seeing the local
+   * part of the address — `harshitsaini.dev` where a person should be. This
+   * is the one source that also works for a mailbox that has never sent
+   * anything, so there is nothing to infer from.
+   */
+  'https://www.googleapis.com/auth/userinfo.profile',
 ] as const
 
 export type GmailScope = (typeof GMAIL_SCOPES)[number]
@@ -73,7 +84,8 @@ export interface ConnectedAccount {
    * The name mail from this account is sent under, when Hive has been told
    * one. Null means it asks Gmail, which is the default and usually right.
    */
-  displayName?: string | null
+  /** The name outgoing mail is sent under, when Hive could work one out. */
+  senderName?: string | null
   sync?: SyncProgress
 }
 

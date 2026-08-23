@@ -488,3 +488,42 @@ export async function moveIndexedLabels(
     'write',
   )
 }
+
+/**
+ * The display name this mailbox last sent under, learned from its own mail.
+ *
+ * A fallback for when Gmail's `sendAs` settings give nothing back — which
+ * leaves recipients seeing the local part of the address where a name should
+ * be. Every message the user has ever sent carries the answer in its `From`
+ * header, and those headers are already indexed, so this costs one query and
+ * no permission Hive does not already have.
+ *
+ * Only messages Gmail itself labelled `SENT`, so it is genuinely their own
+ * outgoing mail and not something addressed to them.
+ */
+export async function findSentDisplayName(
+  accountId: string,
+  emailAddress: string,
+): Promise<string | null> {
+  const result = await db().execute({
+    sql: `SELECT from_addr FROM message_index
+          WHERE account_id = ?
+            AND labels_json LIKE '%"SENT"%'
+            AND from_addr LIKE ?
+          ORDER BY received_at DESC
+          LIMIT 20`,
+    args: [accountId, `%${emailAddress}%`],
+  })
+
+  for (const row of result.rows) {
+    // `"Kapil Gupta" <k@x.com>` or `Kapil Gupta <k@x.com>`; a bare address has
+    // no angle brackets and therefore nothing to learn from.
+    const match = /^\s*"?([^"<]+?)"?\s*</.exec(String(row.from_addr))
+    const name = match?.[1]?.trim()
+
+    // A name that is just the address again teaches nothing.
+    if (name && name.toLowerCase() !== emailAddress.toLowerCase()) return name
+  }
+
+  return null
+}

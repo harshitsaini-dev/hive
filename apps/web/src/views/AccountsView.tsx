@@ -21,9 +21,6 @@ export function AccountsView({
   /** The account awaiting confirmation before it is disconnected. */
   const [pendingDisconnect, setPendingDisconnect] =
     useState<ConnectedAccount | null>(null)
-  /** The account whose sending name is being edited, if any. */
-  const [naming, setNaming] = useState<string | null>(null)
-  const [nameDraft, setNameDraft] = useState('')
 
   async function connect() {
     setConnecting(true)
@@ -40,25 +37,6 @@ export function AccountsView({
           : 'Could not start the connection.',
       )
       setConnecting(false)
-    }
-  }
-
-  async function saveName() {
-    const accountId = naming
-    if (!accountId) return
-
-    setNaming(null)
-    setActionError(null)
-
-    try {
-      await api.setDisplayName(accountId, nameDraft)
-      await onChanged()
-    } catch (caught) {
-      setActionError(
-        caught instanceof ApiRequestError
-          ? caught.message
-          : 'Could not save that name.',
-      )
     }
   }
 
@@ -143,9 +121,9 @@ export function AccountsView({
                     back to the local part of the address.
                   */}
                   <span className="hint accounts__sends">
-                    {account.displayName
-                      ? `Sends as ${account.displayName} <${account.gmailAddress}>`
-                      : 'Sends under the name set in Gmail for this address'}
+                    {account.senderName
+                      ? `Sends as ${account.senderName} <${account.gmailAddress}>`
+                      : `Sends as ${account.gmailAddress}`}
                   </span>
 
                   {account.sync && (
@@ -168,18 +146,6 @@ export function AccountsView({
                   and disconnecting; the index is background work and belongs
                   with the other background work.
                 */}
-                <div className="accounts__actions">
-                  <button
-                    type="button"
-                    className="btn-quiet"
-                    onClick={() => {
-                      setNaming(account.id)
-                      setNameDraft(account.displayName ?? '')
-                    }}
-                  >
-                    {account.displayName ? 'Change name' : 'Set name'}
-                  </button>
-                </div>
                 <button
                   type="button"
                   className="link icon-btn"
@@ -197,48 +163,6 @@ export function AccountsView({
       <div role="alert" aria-live="assertive">
         {actionError && <p className="bad">{actionError}</p>}
       </div>
-
-      {naming && (
-        <div
-          className="modal-backdrop"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setNaming(null)
-          }}
-        >
-          <div className="modal" role="dialog" aria-modal="true"
-               aria-labelledby="name-title">
-            <h2 id="name-title">Name on outgoing mail</h2>
-            <p className="hint">
-              Leave it empty to use whatever Gmail has set for this address.
-            </p>
-
-            <label htmlFor="sender-name">Display name</label>
-            <input
-              id="sender-name"
-              autoFocus
-              value={nameDraft}
-              placeholder="Harshit"
-              onChange={(event) => setNameDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void saveName()
-              }}
-            />
-
-            <div className="modal__actions">
-              <button
-                type="button"
-                className="link"
-                onClick={() => setNaming(null)}
-              >
-                Cancel
-              </button>
-              <button type="button" onClick={() => void saveName()}>
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {pendingDisconnect && (
         <ConfirmDialog

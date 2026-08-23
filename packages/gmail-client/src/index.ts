@@ -161,6 +161,36 @@ export async function ensureFreshTokens(
   }
 }
 
+/**
+ * The account holder's name, from Google's userinfo endpoint.
+ *
+ * Null when the profile scope was not granted, or when Google has no name on
+ * file. Never an error: a missing name means Hive falls back to reading one
+ * off the mailbox's own sent mail, and a failure here must not stop an
+ * account from connecting.
+ */
+export async function getAccountHolderName(
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    const response = await fetch(
+      'https://www.googleapis.com/oauth2/v3/userinfo',
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+
+    if (!response.ok) {
+      console.warn(`userinfo lookup failed (${response.status})`)
+      return null
+    }
+
+    const body = (await response.json()) as { name?: string }
+    return body.name?.trim() || null
+  } catch (error) {
+    console.warn('userinfo lookup threw:', error)
+    return null
+  }
+}
+
 export interface GmailProfile {
   emailAddress: string
   messagesTotal: number

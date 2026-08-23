@@ -9,8 +9,11 @@ export interface AccountRow {
   status: 'active' | 'reauth_required'
   history_id: string | null
   last_synced_at: string | null
-  /** Overrides the name Gmail reports. Null means "ask Gmail". */
-  display_name: string | null
+  /**
+   * The account holder's name from Google, cached when the mailbox was
+   * connected. Null for mailboxes connected before the profile scope existed.
+   */
+  sender_name: string | null
   connected_at: string
 }
 
@@ -23,17 +26,28 @@ export async function upsertAccount(params: {
   ownerId: string
   gmailAddress: string
   encryptedTokens: string
+  senderName?: string | null
 }): Promise<AccountRow> {
   const address = params.gmailAddress.trim().toLowerCase()
 
   await db().execute({
     sql: `INSERT INTO connected_accounts
-            (id, owner_id, gmail_address, encrypted_oauth_tokens, status)
-          VALUES (?, ?, ?, ?, 'active')
+            (id, owner_id, gmail_address, encrypted_oauth_tokens, status,
+             sender_name)
+          VALUES (?, ?, ?, ?, 'active', ?)
           ON CONFLICT(owner_id, gmail_address) DO UPDATE SET
             encrypted_oauth_tokens = excluded.encrypted_oauth_tokens,
-            status = 'active'`,
-    args: [randomUUID(), params.ownerId, address, params.encryptedTokens],
+            status = 'active',
+            -- Kept if the new lookup came back empty: a reconnect that could
+            -- not read the name should not erase one already known.
+            sender_name = COALESCE(excluded.sender_name, sender_name)`,
+    args: [
+      randomUUID(),
+      params.ownerId,
+      address,
+      params.encryptedTokens,
+      params.senderName ?? null,
+    ],
   })
 
   const account = await findAccountByAddress(params.ownerId, address)
@@ -130,22 +144,4 @@ export async function deleteAccount(
     args: [accountId, ownerId],
   })
   return result.rowsAffected === 1
-}
-
-/**
- * The name mail from this account is sent under, when Hive has been told one.
- *
- * Null means "ask Gmail", which is the default and usually right. It exists
- * because "usually" is not "always": an alias with no display name makes
- * Gmail fall back to the local part of the address, and recipients see
- * `harshitsaini.dev` instead of a person.
- */
-export async function setAccountDisplayName(
-  accountId: string,
-  displayName: string | null,
-): Promise<void> {
-  await db().execute({
-    sql: 'UPDATE connected_accounts SET display_name = ? WHERE id = ?',
-    args: [displayName, accountId],
-  })
 }

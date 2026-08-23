@@ -32,10 +32,12 @@ This is what lets Hive talk to Gmail at all. Budget ~20 minutes.
 - [ ] Save and continue
 
 ### 1d. Scopes
-Add all four:
+Add all five:
 - [ ] `https://www.googleapis.com/auth/gmail.readonly`
 - [ ] `https://www.googleapis.com/auth/gmail.modify`
 - [ ] `https://www.googleapis.com/auth/gmail.send`
+- [ ] `https://www.googleapis.com/auth/userinfo.profile` — non-sensitive; the
+      account holder's name, so sent mail carries one
 - [ ] `https://mail.google.com/` — **restricted**, required for permanent delete
 
 > **The fourth one has consequences.** `https://mail.google.com/` is a

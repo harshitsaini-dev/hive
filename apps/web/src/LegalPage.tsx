@@ -70,9 +70,10 @@ function Privacy() {
           and expire after ten minutes.
         </li>
         <li>
-          <strong>Connected mailboxes:</strong> the Gmail address, and Google
-          access credentials encrypted with AES-256-GCM. Credentials are never
-          written to logs.
+          <strong>Connected mailboxes:</strong> the Gmail address, your name
+          as Google records it — used only as the sender name on mail you send
+          — and Google access credentials encrypted with AES-256-GCM.
+          Credentials are never written to logs.
         </li>
         <li>
           <strong>A message index:</strong> sender, subject, date, labels,
@@ -115,6 +116,11 @@ function Privacy() {
         </li>
         <li>
           <code>gmail.send</code> — sending the messages you compose.
+        </li>
+        <li>
+          <code>userinfo.profile</code> — your name, so mail you send through
+          Hive arrives from a person rather than a bare address. Nothing else
+          about your Google profile is read or stored.
         </li>
         <li>
           <code>https://mail.google.com/</code> — permanently deleting messages
