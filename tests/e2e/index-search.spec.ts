@@ -97,8 +97,14 @@ async function stub(page: Page): Promise<Seen> {
   return seen
 }
 
+/*
+ * Empty-safe on purpose. `expect.poll` retries a *value*, not a throw — so
+ * indexing off the end before the first request lands fails the poll outright
+ * instead of waiting for it. Locally the request was always there first;
+ * headless CI is quicker off the mark.
+ */
 function last(seen: Seen): URLSearchParams {
-  return seen.searches[seen.searches.length - 1]!
+  return seen.searches[seen.searches.length - 1] ?? new URLSearchParams()
 }
 
 test.describe('index-served search', () => {
@@ -108,10 +114,9 @@ test.describe('index-served search', () => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await expect.poll(() => last(seen).get('structured')).not.toBeNull()
-    expect(JSON.parse(last(seen).get('structured')!)).toEqual({
-      folder: 'inbox',
-    })
+    await expect
+      .poll(() => JSON.parse(last(seen).get('structured') ?? 'null'))
+      .toEqual({ folder: 'inbox' })
 
     // `q` still goes too. The server picks; the client does not decide for it.
     expect(last(seen).get('q')).toBe('in:inbox')
