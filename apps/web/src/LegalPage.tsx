@@ -80,6 +80,13 @@ function Privacy() {
           message, so search does not have to call Google every time.
         </li>
         <li>
+          <strong>Your last mailbox analysis:</strong> how many messages
+          matched, how many carried an attachment, and a ranked list of sender
+          addresses with their counts. Kept so the result is there when you
+          sign in from somewhere else, and replaced each time you run it. No
+          subjects, no snippets, no message content.
+        </li>
+        <li>
           <strong>An activity log:</strong> what Hive did and when — connected,
           disconnected, trashed, restored, deleted, sent, or ran a rule —
           including counts and recipient addresses, but never message content.

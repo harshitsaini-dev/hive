@@ -103,11 +103,49 @@ export interface BulkJob {
   result: MailboxAnalysis | null
 }
 
-export interface SenderTally {
-  address: string
-  name: string
+export interface Tally {
   count: number
   withAttachment: number
+}
+
+export interface SenderTally extends Tally {
+  address: string
+  name: string
+  /**
+   * The same tally split by mailbox, so the panel can narrow to one account
+   * without another run — the expensive part has already been paid for.
+   */
+  byAccount: Record<string, Tally>
+}
+
+export interface AccountTally extends Tally {
+  accountId: string
+  gmailAddress: string
+}
+
+export interface AnalysisSchedule {
+  enabled: boolean
+  cadence: 'daily' | 'weekly'
+  /**
+   * When to run, as minutes past midnight UTC. The server cannot know anyone's
+   * timezone, so the browser converts on the way in and back out — in minutes
+   * rather than hours, because 03:00 in a half-hour zone is 21:30 UTC and
+   * rounding that drifts the schedule an hour every time it round-trips.
+   */
+  minuteUtc: number
+  accountId: string | null
+  query: string
+  scanLimit: number
+  filters: Record<string, string>
+  lastRunAt?: string | null
+}
+
+export interface SavedAnalysis {
+  accountId: string | null
+  query: string
+  filters: Record<string, string>
+  result: MailboxAnalysis | null
+  finishedAt: string
 }
 
 export interface MailboxAnalysis {
@@ -118,6 +156,8 @@ export interface MailboxAnalysis {
   /** How many messages the sender breakdown actually read headers for. */
   scanned: number
   truncated: boolean
+  /** Per-mailbox totals, exact for the whole account like the figures above. */
+  accounts: AccountTally[]
   senders: SenderTally[]
 }
 
@@ -256,10 +296,36 @@ export const api = {
     accountId?: string
     query: string
     scanLimit: number
+    filters: Record<string, string>
   }) =>
     request<{ jobId: string }>('/messages/analytics', {
       method: 'POST',
       body: JSON.stringify(options),
+    }),
+
+  /**
+   * The last run, from the server rather than this browser — the point of
+   * storing it is that it is there on whatever device you sign in from.
+   */
+  lastAnalysis: () =>
+    request<{ run: SavedAnalysis | null; activeJobId: string | null }>(
+      '/messages/analytics/last',
+    ),
+
+  getAnalysisSchedule: () =>
+    request<{ schedule: AnalysisSchedule | null }>(
+      '/messages/analytics/schedule',
+    ),
+
+  setAnalysisSchedule: (schedule: Omit<AnalysisSchedule, 'lastRunAt'>) =>
+    request<{ ok: true }>('/messages/analytics/schedule', {
+      method: 'PUT',
+      body: JSON.stringify(schedule),
+    }),
+
+  clearAnalysisSchedule: () =>
+    request<{ ok: true }>('/messages/analytics/schedule', {
+      method: 'DELETE',
     }),
 
   /**

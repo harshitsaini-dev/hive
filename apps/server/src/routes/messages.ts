@@ -1,6 +1,13 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { listAccountsForOwner, writeAuditEntry } from '@hive/db'
+import {
+  deleteAnalysisSchedule,
+  findAnalysisRun,
+  findAnalysisSchedule,
+  listAccountsForOwner,
+  saveAnalysisSchedule,
+  writeAuditEntry,
+} from '@hive/db'
 import {
   buildRawMessage,
   fetchMessagesMetadata,
@@ -19,6 +26,7 @@ import {
   untrashMessages,
 } from '@hive/gmail-client'
 import { asyncRoute, badRequest, HttpError, notFound } from '../errors.js'
+import { MAX_SCAN, runAnalysis } from '../analysis.js'
 import {
   advanceJob,
   createJob,
@@ -31,6 +39,19 @@ import { authed, requireAuth } from '../middleware/auth.js'
 import { scopeMissing, withGmail } from '../gmail.js'
 
 export const messagesRouter: Router = Router()
+
+/**
+ * The analysis job each user currently has in flight, if any.
+ *
+ * Held so a browser that was closed mid-run can pick the same job back up
+ * rather than starting a second one — the work carries on server-side
+ * regardless, and starting again would spend the quota twice for one answer.
+ *
+ * In memory, with the same caveat as the job store itself: fine on a single
+ * instance, and something to move into the database if the API is ever
+ * scaled out.
+ */
+const activeAnalysis = new Map<string, string>()
 
 /**
  * The image type these bytes actually are, or null.
@@ -391,68 +412,26 @@ messagesRouter.post(
   }),
 )
 
-/**
- * Ceiling on how many messages one analysis run reads headers for.
- *
- * The counts above it are exact and nearly free — message ids come back 500
- * at a time, so even a hundred thousand of them is a couple of hundred cheap
- * calls. Working out *who sent them* is a different price entirely: that
- * needs the `From` header of every single message, which is a metadata read
- * each, and Gmail allows about three thousand of those a minute.
- *
- * So a hundred thousand messages is roughly half an hour of solid fetching
- * for the sender breakdown alone. Rather than pretend otherwise, the run
- * reads the newest slice, reports exactly how deep it got, and lets the
- * caller ask for more. The totals it sits beside are still for everything.
- */
-const MAX_SCAN = 250_000
-
-/**
- * Ceiling on the id listing behind the exact counts.
- *
- * Deliberately far above `MAX_BULK`, which exists to limit the blast radius
- * of an *action*. Nothing is destroyed by counting, and reusing the action
- * cap here was a real bug: a hundred-thousand-message mailbox reported a
- * total of ten thousand, which is a wrong number presented as a fact.
- */
-const MAX_COUNT = 250_000
-
-/** Newest first, which is the order Gmail returns ids in. */
+/** Analysis lives in its own module; two callers need it. See analysis.ts. */
 const analyticsSchema = z.object({
   accountId: z.string().min(1).optional(),
   query: z.string().max(500),
   scanLimit: z.number().int().min(100).max(MAX_SCAN),
+  /**
+   * The control values behind the query, stored verbatim so the panel can put
+   * itself back the way it was on another device. Opaque to the server.
+   */
+  filters: z.record(z.string(), z.string()).default({}),
 })
-
-/** `"Kapil Gupta <kapil@example.com>"` -> both halves, separately useful. */
-function splitFrom(from: string): { name: string; address: string } {
-  const withAngle = /^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/.exec(from)
-  if (withAngle) {
-    return {
-      name: (withAngle[1] ?? '').trim(),
-      address: (withAngle[2] ?? '').trim().toLowerCase(),
-    }
-  }
-
-  const bare = from.trim().replace(/[<>]/g, '').toLowerCase()
-  return { name: '', address: bare }
-}
-
-interface SenderTally {
-  address: string
-  name: string
-  count: number
-  withAttachment: number
-}
 
 /**
  * POST /messages/analytics — what is actually in the mailbox, and who put it
  * there.
  *
  * A job rather than a plain response because the sender breakdown reads a
- * header per message and a large mailbox takes minutes. The two counts that
- * matter most — how many match, and how many of those carry a file — are
- * resolved from id lists and are exact regardless of how deep the scan got.
+ * header per message and a large mailbox takes minutes. The job outlives the
+ * request on purpose: closing the tab mid-run leaves it finishing in the
+ * background, and the result is waiting on the next visit.
  */
 messagesRouter.post(
   '/analytics',
@@ -461,99 +440,170 @@ messagesRouter.post(
     const parsed = analyticsSchema.safeParse(req.body)
     if (!parsed.success) throw badRequest('A query and scanLimit are required')
 
-    const { accountId, query, scanLimit } = parsed.data
+    const { accountId, query, scanLimit, filters } = parsed.data
     const user = authed(req).user
 
-    const accounts = (await listAccountsForOwner(user.id)).filter(
-      (account) => !accountId || account.id === accountId,
-    )
-    if (accounts.length === 0) throw badRequest('No matching account')
+    // One at a time per user. Two concurrent scans would race each other for
+    // the same per-minute quota and both would crawl.
+    const existing = activeAnalysis.get(user.id)
+    if (existing && getJob(user.id, existing)?.status === 'running') {
+      res.json({ jobId: existing })
+      return
+    }
 
-    // Corrected below, once the query has been resolved and the real size of
-    // the work is known.
     const job = createJob(user.id, 'analyze', 0)
+    activeAnalysis.set(user.id, job.id)
     res.json({ jobId: job.id })
 
     void (async () => {
       try {
-        let total = 0
-        let withAttachment = 0
-        let scanned = 0
-        let truncated = false
-        const senders = new Map<string, SenderTally>()
-
-        for (const account of accounts) {
-          await withGmail(user.id, account.id, async (session) => {
-            // Ids only: 500 per call, so this stays cheap at any size.
-            const all = await listAllMessageIds(
-              session.accessToken,
-              query,
-              MAX_COUNT,
-            )
-            const attached = await listAllMessageIds(
-              session.accessToken,
-              `${query} has:attachment`,
-              MAX_COUNT,
-            )
-
-            total += all.ids.length
-            withAttachment += attached.ids.length
-            if (all.truncated) truncated = true
-
-            const attachedSet = new Set(attached.ids)
-            const slice = all.ids.slice(0, scanLimit)
-            if (slice.length < all.ids.length) truncated = true
-
-            const before = scanned
-            setJobTotal(job.id, before + slice.length)
-            const metadata = await fetchMessagesMetadata(
-              session.accessToken,
-              slice,
-              (done) => advanceJob(job.id, before + done),
-            )
-
-            for (const message of metadata) {
-              const { name, address } = splitFrom(message.from)
-              if (!address) continue
-
-              const tally = senders.get(address) ?? {
-                address,
-                // The first non-empty display name wins; senders vary it.
-                name: '',
-                count: 0,
-                withAttachment: 0,
-              }
-              if (!tally.name && name) tally.name = name
-              tally.count += 1
-              if (attachedSet.has(message.gmailMessageId)) {
-                tally.withAttachment += 1
-              }
-              senders.set(address, tally)
-            }
-
-            scanned += slice.length
-          })
-        }
-
-        setJobResult(job.id, {
-          total,
-          withAttachment,
-          withoutAttachment: Math.max(0, total - withAttachment),
-          scanned,
-          truncated,
-          // Ranked, and capped: a thousand rows of one message each is not a
-          // finding, and the client would render every one of them.
-          senders: [...senders.values()]
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 200),
+        const result = await runAnalysis({
+          userId: user.id,
+          accountId: accountId ?? null,
+          query,
+          scanLimit,
+          filters,
+          onProgress: (done, total) => {
+            setJobTotal(job.id, total)
+            advanceJob(job.id, done)
+          },
         })
+
+        setJobResult(job.id, result)
         finishJob(job.id)
       } catch (error) {
         finishJob(job.id, describeGmailFailure(error))
+      } finally {
+        if (activeAnalysis.get(user.id) === job.id) {
+          activeAnalysis.delete(user.id)
+        }
       }
     })()
   }),
 )
+
+/**
+ * GET /messages/analytics/last — the most recent analysis this user ran.
+ *
+ * What makes the result worth storing is what makes it worth restoring: it
+ * cost minutes and a slice of a per-minute quota to produce, and re-running
+ * it on every page load would spend both again for an answer that has barely
+ * changed.
+ */
+messagesRouter.get(
+  '/analytics/last',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const userId = authed(req).user.id
+
+    // A run still going is more useful than the one before it: the panel can
+    // reattach to it instead of showing a stale result and starting another.
+    const activeId = activeAnalysis.get(userId)
+    const active =
+      activeId && getJob(userId, activeId)?.status === 'running' ? activeId : null
+
+    const row = await findAnalysisRun(userId)
+    if (!row) {
+      res.json({ run: null, activeJobId: active })
+      return
+    }
+
+    res.json({
+      activeJobId: active,
+      run: {
+        accountId: row.account_id,
+        query: row.query,
+        // Written by this server, but parsed defensively all the same: a row
+        // from an older shape should read as "nothing saved", not a 500.
+        filters: safeParse(row.filters_json, {}),
+        result: safeParse(row.result_json, null),
+        finishedAt: row.finished_at,
+      },
+    })
+  }),
+)
+
+/**
+ * The scheduled analysis, if one is set.
+ *
+ * `minute_utc` goes out as it is stored. The server has no idea what timezone
+ * anyone is in, so the browser is the only place the conversion can honestly
+ * happen — it sends minutes past midnight UTC and turns them back into a
+ * local time to display. Minutes rather than hours because half-hour zones
+ * exist and rounding one drifts the schedule; see the migration.
+ */
+messagesRouter.get(
+  '/analytics/schedule',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const row = await findAnalysisSchedule(authed(req).user.id)
+
+    res.json({
+      schedule: row
+        ? {
+            enabled: row.enabled === 1,
+            cadence: row.cadence,
+            minuteUtc: row.minute_utc,
+            accountId: row.account_id,
+            query: row.query,
+            scanLimit: row.scan_limit,
+            filters: safeParse(row.filters_json, {}),
+            lastRunAt: row.last_run_at,
+          }
+        : null,
+    })
+  }),
+)
+
+const scheduleSchema = z.object({
+  enabled: z.boolean(),
+  cadence: z.enum(['daily', 'weekly']),
+  minuteUtc: z.number().int().min(0).max(1439),
+  accountId: z.string().min(1).nullable().default(null),
+  query: z.string().max(500),
+  scanLimit: z.number().int().min(100).max(MAX_SCAN),
+  filters: z.record(z.string(), z.string()).default({}),
+})
+
+/**
+ * PUT /messages/analytics/schedule — set or clear it.
+ *
+ * There is deliberately no action to schedule alongside this. A scheduled run
+ * produces numbers and stores them; clearing mail still needs a person to
+ * press the button and confirm. See ADR 0002.
+ */
+messagesRouter.put(
+  '/analytics/schedule',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const parsed = scheduleSchema.safeParse(req.body)
+    if (!parsed.success) throw badRequest('That schedule is not valid')
+
+    await saveAnalysisSchedule({
+      userId: authed(req).user.id,
+      ...parsed.data,
+    })
+
+    res.json({ ok: true })
+  }),
+)
+
+messagesRouter.delete(
+  '/analytics/schedule',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    await deleteAnalysisSchedule(authed(req).user.id)
+    res.json({ ok: true })
+  }),
+)
+
+function safeParse<T>(json: string, fallback: T): T {
+  try {
+    return JSON.parse(json) as T
+  } catch {
+    return fallback
+  }
+}
 
 /**
  * Runs a bulk action, optionally in the background with a progress job.

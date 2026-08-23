@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type CleanupRule } from './api.js'
+import { ConfirmDialog } from './ConfirmDialog.js'
 import { TrashIcon } from './Icons.js'
 import { RulesWizard } from './RulesWizard.js'
 
@@ -15,6 +16,8 @@ export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** The rule awaiting confirmation before it is deleted. */
+  const [pendingDelete, setPendingDelete] = useState<CleanupRule | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -124,10 +127,7 @@ export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
                   type="button"
                   className="link icon-btn"
                   disabled={busy === rule.id}
-                  onClick={() => {
-                    if (!window.confirm(`Delete the rule "${rule.query}"?`)) return
-                    void act(rule.id, () => api.deleteRule(rule.id))
-                  }}
+                  onClick={() => setPendingDelete(rule)}
                 >
                   <TrashIcon size={14} />
                   Delete
@@ -141,6 +141,21 @@ export function RulesPanel({ accounts }: { accounts: ConnectedAccount[] }) {
       <div role="alert" aria-live="assertive">
         {error && <p className="bad">{error}</p>}
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete this cleanup rule?"
+          body={`The rule matching "${pendingDelete.query}" stops running. Mail it has already moved to Trash stays there.`}
+          confirmLabel="Delete rule"
+          busy={busy === pendingDelete.id}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const id = pendingDelete.id
+            setPendingDelete(null)
+            void act(id, () => api.deleteRule(id))
+          }}
+        />
+      )}
     </section>
   )
 }

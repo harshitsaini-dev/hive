@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import {
   api,
@@ -6,6 +6,7 @@ import {
   type MailboxAnalysis,
   type SenderTally,
 } from './api.js'
+import { ConfirmDialog } from './ConfirmDialog.js'
 import { DatePicker } from './DatePicker.js'
 import {
   AlertIcon,
@@ -74,58 +75,24 @@ function percent(part: number, whole: number): number {
 }
 
 /*
- * A finished run is kept in the browser so a reload does not throw away
- * something that took minutes — and, on a large mailbox, a slice of that
- * minute's Gmail quota. Only counts and sender addresses are stored: the same
- * metadata already on screen, on the reader's own device, never a message
- * body. Every access is guarded because storage throws outright in a private
- * window and in browsers set to block site data.
+ * A finished run is kept on the server, not in this browser.
+ *
+ * localStorage met the "do not throw it away on refresh" half of the
+ * requirement and none of the "see it from anywhere" half — and a run is
+ * expensive enough to deserve both: reading who sent a message costs one
+ * Gmail request per message, against a quota measured per minute.
+ *
+ * Only counts and sender addresses travel — the same metadata the mailbox
+ * list already shows. Message content never reaches the database.
  */
-const SAVED_KEY = 'hive.analysis.v1'
+function formatWhen(iso: string): string {
+  // SQLite's `datetime('now')` has no zone marker; it is UTC.
+  const stamped = /Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`
+  const date = new Date(stamped.replace(' ', 'T'))
 
-interface SavedRun {
-  /** What the run was scoped to, so a changed filter can be spotted. */
-  scope: { accountId: string; query: string }
-  finishedAt: number
-  filters: {
-    accountId: string
-    olderThan: string
-    after: string
-    before: string
-    scanLimit: string
-  }
-  analysis: MailboxAnalysis
-}
-
-function loadSaved(): SavedRun | null {
-  try {
-    const raw = window.localStorage.getItem(SAVED_KEY)
-    if (!raw) return null
-
-    const parsed = JSON.parse(raw) as SavedRun
-    // Shape-checked rather than trusted: an older build's payload should be
-    // ignored, not rendered into a crash.
-    return parsed?.analysis && typeof parsed.analysis.total === 'number'
-      ? parsed
-      : null
-  } catch {
-    return null
-  }
-}
-
-function saveRun(run: SavedRun): void {
-  try {
-    window.localStorage.setItem(SAVED_KEY, JSON.stringify(run))
-  } catch {
-    // A run that cannot be cached is still a run that happened.
-  }
-}
-
-function formatWhen(at: number): string {
-  return new Date(at).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export function AnalyticsPanel({
@@ -145,27 +112,89 @@ export function AnalyticsPanel({
    * an address you half-recognise could be receipts you need. Looking first
    * is the cheap half of the decision, and the list is already there.
    */
-  onView: (sender: SenderTally) => void
+  onView: (patch: {
+    from?: string
+    hasAttachment?: boolean
+    raw?: string
+    /** Narrow the list to one mailbox, or '' for all of them. */
+    accountId?: string
+  }) => void
 }) {
-  // Read once, in an initialiser: re-reading on every render would fight the
-  // controls the moment someone changed one.
-  const [saved] = useState(loadSaved)
+  const [accountId, setAccountId] = useState('')
+  const [olderThan, setOlderThan] = useState('')
+  const [after, setAfter] = useState('')
+  const [before, setBefore] = useState('')
+  const [scanLimit, setScanLimit] = useState('5000')
 
-  const [accountId, setAccountId] = useState(saved?.filters.accountId ?? '')
-  const [olderThan, setOlderThan] = useState(saved?.filters.olderThan ?? '')
-  const [after, setAfter] = useState(saved?.filters.after ?? '')
-  const [before, setBefore] = useState(saved?.filters.before ?? '')
-  const [scanLimit, setScanLimit] = useState(saved?.filters.scanLimit ?? '5000')
-
+  const [restoring, setRestoring] = useState(true)
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
     null,
   )
-  const [analysis, setAnalysis] = useState<MailboxAnalysis | null>(
-    saved?.analysis ?? null,
-  )
-  const [ranAt, setRanAt] = useState<number | null>(saved?.finishedAt ?? null)
-  const [scope, setScope] = useState(saved?.scope ?? null)
+  const [analysis, setAnalysis] = useState<MailboxAnalysis | null>(null)
+  const [ranAt, setRanAt] = useState<string | null>(null)
+  const [scope, setScope] = useState<{
+    accountId: string
+    query: string
+  } | null>(null)
+  /** Which of the three totals the panel is currently narrowed to. */
+  const [onlyWith, setOnlyWith] = useState<'all' | 'with' | 'without'>('all')
+  /** Which mailbox the panel is narrowed to, or '' for all of them. */
+  const [onlyAccount, setOnlyAccount] = useState('')
+  /** Senders ticked for a bulk view or clear, by address. */
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  /**
+   * What is awaiting confirmation before it is trashed.
+   *
+   * A list of queries rather than one, because a multi-sender clear runs one
+   * request per sender: a partial failure then leaves a known state instead
+   * of one opaque failure covering all of them.
+   */
+  const [pendingClear, setPendingClear] = useState<{
+    what: string
+    count: number
+    queries: string[]
+  } | null>(null)
+
+  // Restores the last run, filters included, so the panel opens where it was
+  // left — on this device or any other.
+  useEffect(() => {
+    let cancelled = false
+
+    api
+      .lastAnalysis()
+      .then(({ run, activeJobId }) => {
+        if (cancelled) return
+
+        if (run?.result) {
+          setAccountId(run.filters.accountId ?? run.accountId ?? '')
+          setOlderThan(run.filters.olderThan ?? '')
+          setAfter(run.filters.after ?? '')
+          setBefore(run.filters.before ?? '')
+          setScanLimit(run.filters.scanLimit ?? '5000')
+
+          setAnalysis(run.result)
+          setRanAt(run.finishedAt)
+          setScope({ accountId: run.accountId ?? '', query: run.query })
+        }
+
+        /*
+         * A run started before the tab was closed is still going server-side.
+         * Reattaching to it rather than starting another is the difference
+         * between finishing the work and paying for it twice.
+         */
+        if (activeJobId) void resume(activeJobId)
+      })
+      // No saved run, or it could not be read: an empty panel, not an error.
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setRestoring(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [error, setError] = useState<string | null>(null)
   const [cleaning, setCleaning] = useState<string | null>(null)
 
@@ -182,6 +211,22 @@ export function AnalyticsPanel({
     return parts.join(' ')
   }
 
+  /**
+   * The query the actions act on: the run's own filters, narrowed by whichever
+   * total is pressed. Kept separate from {@link buildQuery} because the run
+   * itself must always cover everything — the attachment split is one of the
+   * things it goes and measures.
+   */
+  function activeQuery(): string {
+    const attachment =
+      onlyWith === 'with'
+        ? ' has:attachment'
+        : onlyWith === 'without'
+          ? ' -has:attachment'
+          : ''
+    return `${buildQuery()}${attachment}`
+  }
+
   async function watch(jobId: string) {
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 900))
@@ -195,10 +240,38 @@ export function AnalyticsPanel({
     }
   }
 
+  /** Follows a job that this session did not start. */
+  async function resume(jobId: string) {
+    setRunning(true)
+    setError(null)
+    setProgress({ done: 0, total: 0 })
+
+    try {
+      const result = await watch(jobId)
+      setAnalysis(result)
+      setRanAt(new Date().toISOString())
+      setSelected(new Set())
+    } catch (caught) {
+      setError(
+        caught instanceof ApiRequestError || caught instanceof Error
+          ? caught.message
+          : 'That analysis did not finish.',
+      )
+    } finally {
+      setRunning(false)
+      setProgress(null)
+    }
+  }
+
   async function run() {
     setRunning(true)
     setError(null)
-    setAnalysis(null)
+    /*
+     * The previous run stays on screen until this one lands. Blanking it made
+     * "Run again" feel like it had destroyed the answer, and a scan takes
+     * minutes — during which the old numbers are still the best ones there
+     * are, and still worth reading.
+     */
     // Zero until the job reports the real size; the server only knows it
     // after resolving the query, which is the first thing it does.
     setProgress({ done: 0, total: 0 })
@@ -209,22 +282,17 @@ export function AnalyticsPanel({
         accountId: accountId || undefined,
         query,
         scanLimit: Number(scanLimit),
+        filters: { accountId, olderThan, after, before, scanLimit },
       })
 
+      // The server stores the run as the job finishes, so nothing is saved
+      // from here — this only mirrors what it kept.
       const result = await watch(jobId)
-      const finishedAt = Date.now()
-
+      // Replaced in one step, so the panel never shows half of each run.
       setAnalysis(result)
-      setRanAt(finishedAt)
+      setRanAt(new Date().toISOString())
       setScope({ accountId, query })
-      if (result) {
-        saveRun({
-          scope: { accountId, query },
-          finishedAt,
-          filters: { accountId, olderThan, after, before, scanLimit },
-          analysis: result,
-        })
-      }
+      setSelected(new Set())
     } catch (caught) {
       setError(
         caught instanceof ApiRequestError || caught instanceof Error
@@ -238,88 +306,155 @@ export function AnalyticsPanel({
   }
 
   /**
-   * Trashes everything from one sender that matches the current filters.
+   * Trashes everything from the chosen senders that matches the filters.
    *
    * Trash, never permanent delete — a chart is a place to notice something,
    * not a place to destroy mail from. Anything cleared here is recoverable
    * from the bin for thirty days, and permanent deletion stays where it is:
    * behind a typed confirmation in the Trash view.
    */
-  async function clearSender(sender: SenderTally) {
-    // Same filters the numbers were produced under; `stale` guards the case
-    // where they have since drifted.
-    const query = `${buildQuery()} from:${sender.address} -in:trash`
-
-    const confirmed = window.confirm(
-      `Move every message from ${sender.address} matching these filters to Trash?\n\n` +
-        'They stay recoverable in Trash for thirty days.',
-    )
-    if (!confirmed) return
-
-    setCleaning(sender.address)
+  async function clearMatching(target: {
+    what: string
+    count: number
+    queries: string[]
+  }) {
+    setPendingClear(null)
+    setCleaning(target.what)
     setError(null)
 
+    /*
+     * The mailbox chip narrows what is acted on, not just what is shown. A
+     * figure of 65 that belongs to one account must not clear 200 across
+     * three — the number on screen is the promise being kept.
+     */
+    const scopeId = onlyAccount || accountId
+    const accountsToClear = scopeId
+      ? accounts.filter((account) => account.id === scopeId)
+      : accounts
+
     try {
-      const targets = accountId
-        ? accounts.filter((account) => account.id === accountId)
-        : accounts
-
       let trashed = 0
-      for (const account of targets) {
-        const resolved = await api.resolveQuery(account.id, query)
-        if (resolved.messageIds.length === 0) continue
 
-        await api.trashMessages(
-          account.id,
-          resolved.messageIds,
-          resolved.messageIds.length > 200,
-        )
-        trashed += resolved.messageIds.length
+      for (const query of target.queries) {
+        for (const account of accountsToClear) {
+          const resolved = await api.resolveQuery(account.id, query)
+          if (resolved.messageIds.length === 0) continue
+
+          await api.trashMessages(
+            account.id,
+            resolved.messageIds,
+            resolved.messageIds.length > 200,
+          )
+          trashed += resolved.messageIds.length
+        }
       }
 
       onCleaned(
         trashed === 0
-          ? `Nothing left from ${sender.address}.`
-          : `Moved ${trashed.toLocaleString()} message${trashed === 1 ? '' : 's'} from ${sender.address} to Trash.`,
+          ? `Nothing left matching ${target.what}.`
+          : `Moved ${trashed.toLocaleString()} message${trashed === 1 ? '' : 's'} from ${target.what} to Trash.`,
       )
 
-      // Drop the row rather than re-running a scan that costs minutes — and
-      // drop it from the cache too, or a reload brings back a sender whose
-      // mail is already in the bin.
+      /*
+       * The rows go, but the run is not re-scanned — that costs minutes. The
+       * stored copy still lists them until the next run, which is accepted:
+       * correcting it would mean a write per cleared sender, and the saved
+       * figures are already a snapshot of a mailbox that keeps moving.
+       */
       setAnalysis((current) => {
         if (!current) return current
-
-        const next = {
-          ...current,
-          senders: current.senders.filter(
-            (entry) => entry.address !== sender.address,
-          ),
-        }
-
-        if (ranAt && scope) {
-          saveRun({
-            scope,
-            finishedAt: ranAt,
-            filters: { accountId, olderThan, after, before, scanLimit },
-            analysis: next,
-          })
-        }
-
-        return next
+        const cleared = new Set(
+          chosen.length > 0 ? chosen.map((sender) => sender.address) : [],
+        )
+        return cleared.size > 0
+          ? {
+              ...current,
+              senders: current.senders.filter(
+                (entry) => !cleared.has(entry.address),
+              ),
+            }
+          : current
       })
+      setSelected(new Set())
     } catch (caught) {
       setError(
         caught instanceof ApiRequestError
           ? caught.message
-          : 'Could not clear that sender.',
+          : 'Could not clear that. Anything already moved stayed moved.',
       )
     } finally {
       setCleaning(null)
     }
   }
 
+  /** One request per sender, for the reason on `pendingClear`. */
+  function askClearSenders(list: SenderTally[]) {
+    setPendingClear({
+      what:
+        list.length === 1
+          ? (list[0]?.address ?? 'that sender')
+          : `${list.length} senders`,
+      count: list.reduce((sum, sender) => sum + sender.count, 0),
+      queries: list.map(
+        (sender) => `${activeQuery()} from:${sender.address} -in:trash`,
+      ),
+    })
+  }
+
   const busy = running || cleaning !== null
-  const top = analysis?.senders[0]?.count ?? 0
+
+  /*
+   * Recounted rather than re-fetched. Each sender's total and its attachment
+   * count are both already known, so the third figure is subtraction — and a
+   * sender who contributes nothing to the pressed view drops out rather than
+   * sitting there as a zero.
+   */
+  const shown = (analysis?.senders ?? [])
+    .map((sender) => {
+      // Narrowed to one mailbox, that mailbox's slice of the sender is the
+      // whole story; otherwise it is the sender's total across all of them.
+      const scoped = onlyAccount
+        ? (sender.byAccount?.[onlyAccount] ?? {
+            count: 0,
+            withAttachment: 0,
+          })
+        : { count: sender.count, withAttachment: sender.withAttachment }
+
+      return {
+        ...sender,
+        count:
+          onlyWith === 'with'
+            ? scoped.withAttachment
+            : onlyWith === 'without'
+              ? scoped.count - scoped.withAttachment
+              : scoped.count,
+        withAttachment: scoped.withAttachment,
+      }
+    })
+    .filter((sender) => sender.count > 0)
+    .sort((a, b) => b.count - a.count)
+
+  /*
+   * The headline figures follow the chosen mailbox as well. They come from the
+   * per-account totals the run already recorded, so switching mailbox is
+   * arithmetic rather than another scan.
+   */
+  const scopedAccount = onlyAccount
+    ? analysis?.accounts.find((entry) => entry.accountId === onlyAccount)
+    : undefined
+  const scopedTotal = scopedAccount?.count ?? analysis?.total ?? 0
+  const scopedAttached = scopedAccount?.withAttachment ?? analysis?.withAttachment ?? 0
+
+  const chosen = shown.filter((sender) => selected.has(sender.address))
+
+  /** The attachment condition, in the shape the mail view's filters take. */
+  const viewPatch = {
+    hasAttachment: onlyWith === 'with',
+    raw: onlyWith === 'without' ? '-has:attachment' : '',
+    accountId: onlyAccount || accountId,
+  }
+  const allTicked = shown.length > 0 && chosen.length === shown.length
+  const top = shown[0]?.count ?? 0
 
   /*
    * A restored run describes the filters it was run with, not whatever the
@@ -345,21 +480,25 @@ export function AnalyticsPanel({
       </div>
 
       <div className="analytics__controls">
-        {accounts.length > 1 && (
-          <Select
-            label="Account to analyse"
-            className="analytics__field"
-            value={accountId}
-            options={[
-              { value: '', label: 'All accounts' },
-              ...accounts.map((account) => ({
-                value: account.id,
-                label: account.gmailAddress,
-              })),
-            ]}
-            onChange={setAccountId}
-          />
-        )}
+        {/*
+          Shown even with one mailbox connected. "All connected accounts" is
+          the answer to a question people actually ask of this panel, and a
+          control that appears only once a second account exists is a control
+          nobody knows is there.
+        */}
+        <Select
+          label="Account to analyse"
+          className="analytics__field"
+          value={accountId}
+          options={[
+            { value: '', label: 'All connected accounts' },
+            ...accounts.map((account) => ({
+              value: account.id,
+              label: account.gmailAddress,
+            })),
+          ]}
+          onChange={setAccountId}
+        />
 
         <Select
           label="Age"
@@ -421,7 +560,11 @@ export function AnalyticsPanel({
         {running && progress && (
           <div className="progress analytics__progress">
             <div className="progress__label">
-              <span>Reading senders…</span>
+              <span>
+                {analysis
+                  ? 'Refreshing — showing the last run'
+                  : 'Reading senders… you can close this and come back'}
+              </span>
               <span>
                 {progress.total > 0
                   ? `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()}`
@@ -468,6 +611,19 @@ export function AnalyticsPanel({
         </p>
       )}
 
+      {pendingClear && (
+        <ConfirmDialog
+          title={`Move ${pendingClear.what} to Trash?`}
+          body={`Around ${pendingClear.count.toLocaleString()} message${
+            pendingClear.count === 1 ? '' : 's'
+          } matching the current filters move to Trash. They stay recoverable there for thirty days.`}
+          confirmLabel="Move to Trash"
+          busy={cleaning !== null}
+          onCancel={() => setPendingClear(null)}
+          onConfirm={() => void clearMatching(pendingClear)}
+        />
+      )}
+
       {analysis && (
         <>
           {ranAt && (
@@ -478,31 +634,84 @@ export function AnalyticsPanel({
             </p>
           )}
 
-          <div className="analytics__totals">
-            <div className="analytics__stat">
-              <strong>{analysis.total.toLocaleString()}</strong>
-              <span className="hint">messages match</span>
-            </div>
-            <div className="analytics__stat">
-              <strong>{analysis.withAttachment.toLocaleString()}</strong>
-              <span className="hint">
-                with attachments ({percent(analysis.withAttachment, analysis.total)}
-                %)
-              </span>
-            </div>
-            <div className="analytics__stat">
-              <strong>{analysis.withoutAttachment.toLocaleString()}</strong>
-              <span className="hint">without</span>
-            </div>
+          {/*
+            The three totals are the filter, not decoration beside one. The
+            whole panel below narrows to whichever is pressed, which costs
+            nothing to compute: a per-sender total and its attachment count
+            already imply the third figure, so switching between them is
+            arithmetic on a run that has already happened rather than another
+            few minutes of Gmail quota.
+          */}
+          <div className="analytics__totals" role="group" aria-label="Show">
+            {(
+              [
+                { key: 'all', value: scopedTotal, label: 'messages match' },
+                {
+                  key: 'with',
+                  value: scopedAttached,
+                  label: `with attachments (${percent(scopedAttached, scopedTotal)}%)`,
+                },
+                {
+                  key: 'without',
+                  value: Math.max(0, scopedTotal - scopedAttached),
+                  label: 'without',
+                },
+              ] as const
+            ).map((stat) => (
+              <button
+                key={stat.key}
+                type="button"
+                className="analytics__stat"
+                aria-pressed={onlyWith === stat.key}
+                onClick={() => setOnlyWith(stat.key)}
+              >
+                <strong>{stat.value.toLocaleString()}</strong>
+                <span className="hint">{stat.label}</span>
+              </button>
+            ))}
           </div>
+
+          {/*
+            Mailboxes, narrowing the same list. Only worth drawing when a run
+            covered more than one — with a single account the chip would be a
+            button whose only state is the one already showing.
+          */}
+          {analysis.accounts.length > 1 && (
+            <div
+              className="analytics__mailboxes"
+              role="group"
+              aria-label="Mailbox"
+            >
+              <button
+                type="button"
+                className="analytics__chip"
+                aria-pressed={onlyAccount === ''}
+                onClick={() => setOnlyAccount('')}
+              >
+                All connected
+                <span className="hint">{analysis.total.toLocaleString()}</span>
+              </button>
+
+              {analysis.accounts.map((entry) => (
+                <button
+                  key={entry.accountId}
+                  type="button"
+                  className="analytics__chip"
+                  aria-pressed={onlyAccount === entry.accountId}
+                  onClick={() => setOnlyAccount(entry.accountId)}
+                >
+                  {entry.gmailAddress}
+                  <span className="hint">{entry.count.toLocaleString()}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* One bar, because two numbers that add to a whole is one bar. */}
           <div className="analytics__split" aria-hidden="true">
             <span
               className="analytics__split-fill"
-              style={{
-                width: `${percent(analysis.withAttachment, analysis.total)}%`,
-              }}
+              style={{ width: `${percent(scopedAttached, scopedTotal)}%` }}
             />
           </div>
 
@@ -526,63 +735,148 @@ export function AnalyticsPanel({
             </p>
           )}
 
-          {analysis.senders.length === 0 ? (
-            <p className="hint">Nothing matched those filters.</p>
+          {shown.length === 0 ? (
+            <p className="hint">
+              {onlyWith === 'all'
+                ? 'Nothing matched those filters.'
+                : `No senders in the scanned slice sent mail ${
+                    onlyWith === 'with' ? 'with' : 'without'
+                  } attachments.`}
+            </p>
           ) : (
-            <ul className="analytics__senders">
-              {analysis.senders.map((sender) => (
-                <li key={sender.address}>
-                  <div className="analytics__sender">
-                    <span className="analytics__who">
-                      <strong>{sender.name || sender.address}</strong>
-                      {sender.name && (
-                        <span className="hint">{sender.address}</span>
-                      )}
-                    </span>
-
-                    <span className="analytics__count">
-                      {sender.count.toLocaleString()}
-                      {sender.withAttachment > 0 && (
-                        <span
-                          className="hint analytics__attached"
-                          title={`${sender.withAttachment} with attachments`}
-                        >
-                          <PaperclipIcon size={12} />
-                          {sender.withAttachment.toLocaleString()}
-                        </span>
-                      )}
-                    </span>
-
-                    <span className="analytics__actions">
-                      <button
-                        type="button"
-                        className="btn-quiet analytics__act"
-                        onClick={() => onView(sender)}
-                      >
-                        <MailIcon size={13} />
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-quiet analytics__act"
-                        disabled={busy || stale}
-                        onClick={() => void clearSender(sender)}
-                      >
-                        <TrashIcon size={13} />
-                        {cleaning === sender.address ? 'Clearing…' : 'Clear'}
-                      </button>
-                    </span>
-                  </div>
-
-                  {/* Relative to the top sender, so the shape is readable. */}
-                  <span
-                    className="analytics__bar"
-                    aria-hidden="true"
-                    style={{ width: `${percent(sender.count, top)}%` }}
+            <>
+              {/*
+                Tick several, act once. Clearing eleven newsletters one
+                confirmation at a time is eleven chances to misclick and a lot
+                of waiting — and the reason to rank senders at all is that the
+                junk arrives in clumps.
+              */}
+              <div className="analytics__selectbar">
+                <label className="checkline">
+                  <input
+                    type="checkbox"
+                    checked={allTicked}
+                    onChange={(event) =>
+                      setSelected(
+                        event.target.checked
+                          ? new Set(
+                              shown.map((sender) => sender.address),
+                            )
+                          : new Set(),
+                      )
+                    }
                   />
-                </li>
-              ))}
-            </ul>
+                  Select all
+                </label>
+
+                {chosen.length > 0 && (
+                  <>
+                    <span className="hint">
+                      {chosen.length} selected ·{' '}
+                      {chosen
+                        .reduce((sum, sender) => sum + sender.count, 0)
+                        .toLocaleString()}{' '}
+                      messages
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-quiet analytics__act"
+                      onClick={() =>
+                        onView({
+                          ...viewPatch,
+                          from: `(${chosen
+                            .map((sender) => sender.address)
+                            .join(' OR ')})`,
+                        })
+                      }
+                    >
+                      <MailIcon size={13} />
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-quiet analytics__act"
+                      disabled={busy || stale}
+                      onClick={() => askClearSenders(chosen)}
+                    >
+                      <TrashIcon size={13} />
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <ul className="analytics__senders">
+                {shown.map((sender) => (
+                  <li key={sender.address}>
+                    <div className="analytics__sender">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${sender.address}`}
+                        checked={selected.has(sender.address)}
+                        onChange={(event) => {
+                          const next = new Set(selected)
+                          if (event.target.checked) next.add(sender.address)
+                          else next.delete(sender.address)
+                          setSelected(next)
+                        }}
+                      />
+
+                      <span className="analytics__who">
+                        <strong>{sender.name || sender.address}</strong>
+                        {sender.name && (
+                          <span className="hint">{sender.address}</span>
+                        )}
+                      </span>
+
+                      <span className="analytics__count">
+                        {sender.count.toLocaleString()}
+                        {onlyWith === 'all' && sender.withAttachment > 0 && (
+                          <span
+                            className="hint analytics__attached"
+                            title={`${sender.withAttachment} with attachments`}
+                          >
+                            <PaperclipIcon size={12} />
+                            {sender.withAttachment.toLocaleString()}
+                          </span>
+                        )}
+                      </span>
+
+                      <span className="analytics__actions">
+                        <button
+                          type="button"
+                          className="btn-quiet analytics__act"
+                          onClick={() =>
+                            onView({ ...viewPatch, from: sender.address })
+                          }
+                        >
+                          <MailIcon size={13} />
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-quiet analytics__act"
+                          disabled={busy || stale}
+                          onClick={() => askClearSenders([sender])}
+                        >
+                          <TrashIcon size={13} />
+                          {cleaning?.includes(sender.address)
+                            ? 'Clearing…'
+                            : 'Clear'}
+                        </button>
+                      </span>
+                    </div>
+
+                    {/* Relative to the top sender, so the shape is readable. */}
+                    <span
+                      className="analytics__bar"
+                      aria-hidden="true"
+                      style={{ width: `${percent(sender.count, top)}%` }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </>
       )}

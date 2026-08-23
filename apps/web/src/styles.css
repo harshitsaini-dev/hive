@@ -520,8 +520,28 @@ body {
  */
 @media (pointer: coarse) {
   button,
-  input,
+  input:not([type='checkbox']):not([type='radio']),
   .theme-toggle__option {
+    min-height: 44px;
+  }
+
+  /*
+   * Checkboxes and radios are square, and `min-height` alone was stretching
+   * them into 44px-tall slivers a sixteenth as wide — the boxes in the
+   * message list looked broken on every phone. They get a bigger box and the
+   * rest of the target as outset padding, which enlarges the tap area
+   * without changing the drawn shape or the layout around it.
+   */
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 1.35rem;
+    height: 1.35rem;
+    outline-offset: 2px;
+  }
+
+  /* The label wrapping it is the real target; give it room to be tapped. */
+  .checkline,
+  .radioline {
     min-height: 44px;
   }
 
@@ -1178,13 +1198,26 @@ textarea:focus-visible {
 
 /*
  * The drawer toggle only exists below the breakpoint where the sidebar
- * collapses. Written as `button.app__menu` deliberately: the element also
- * carries `.link`, and the later ghost-button rule sets `display: inline-flex`
- * on `button.link`. A bare `.app__menu` loses that specificity contest, which
- * is exactly how a dead "Menu" button ended up on desktop.
+ * collapses — above it, every destination is already on screen and the button
+ * does nothing but toggle its own label.
+ *
+ * It used to carry `.link` as well, and a later `button.link { display:
+ * inline-flex }` rule kept overriding this one on equal specificity. Hiding
+ * it reliably meant taking the shared class away, not escalating selectors:
+ * the next person to add a `button.link` rule would have re-broken it.
  */
-button.app__menu {
+.app__menu {
   display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  color: var(--ink);
 }
 
 .view {
@@ -1216,21 +1249,47 @@ button.app__menu {
    * a drawer toggled from the bar. Hidden with display:none rather than a
    * transform so its buttons leave the tab order entirely while closed.
    */
-  button.app__menu {
+  .app__menu {
     display: inline-flex;
     order: -1;
   }
 
+  /*
+   * The drawer floats over the page instead of sitting in the flow.
+   *
+   * In the flow it pushed the entire app down the screen when opened — tap
+   * Menu and the mail you were reading walks off the bottom, tap a
+   * destination and it walks back. A drawer is a layer, not a section.
+   */
   .app__nav {
     display: none;
-    position: static;
-    width: 100%;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+    position: fixed;
+    z-index: 60;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(16rem, 82vw);
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+    background: var(--surface);
+    box-shadow: var(--shadow-floating);
   }
 
   .app__nav[data-open='true'] {
     display: flex;
+  }
+
+  /* Tapping the page behind is the fastest way out of a drawer. */
+  .app__nav[data-open='true']::before {
+    content: '';
+    position: fixed;
+    z-index: -1;
+    inset: 0;
+    left: min(16rem, 82vw);
+    background: rgb(0 0 0 / 0.45);
   }
 
   .app__body {
@@ -1795,9 +1854,32 @@ input[type='radio'] {
     max-width: none;
   }
 
+  /*
+   * The second pane becomes a sheet over the first, not a section below it.
+   *
+   * Stacked, it rendered underneath a list that is five hundred rows long —
+   * so tapping a message, or opening the analysis, appeared to do nothing at
+   * all. The content was there; it was thousands of pixels down. A sheet is
+   * what "open this" means on a phone.
+   */
   .reader {
-    position: static;
+    position: fixed;
+    z-index: 70;
+    inset: 0;
     max-height: none;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border-radius: 0;
+  }
+
+  /* Close has to stay reachable however far the message scrolls. */
+  .reader__bar,
+  .reader__head {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    background: var(--surface);
   }
 }
 
@@ -2984,17 +3066,33 @@ a.link-plain {
 
 .analytics__totals {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Three across only while they fit; below that they stack rather than
+     squeeze the actions out of each card. */
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 0.5rem;
 }
 
+/* A button, because pressing one narrows everything below it. */
 .analytics__stat {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
   padding: 0.6rem;
+  border: 0;
   border-radius: var(--radius-md);
   background: var(--surface-2);
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+.analytics__stat:active {
+  transform: none;
+}
+
+.analytics__stat[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .analytics__stat strong {
@@ -3134,4 +3232,64 @@ a.link-plain {
 .analytics__when {
   margin: 0;
   font-size: 0.75rem;
+}
+
+.analytics__selectbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+/* The row checkbox sits ahead of the name, not inside it. */
+.analytics__sender > input[type='checkbox'] {
+  flex: none;
+}
+
+.schedule__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.schedule__actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Mailbox chips: the same narrowing idea as the totals, one row down. */
+.analytics__mailboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.analytics__chip {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.3rem 0.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.analytics__chip:active {
+  transform: none;
+}
+
+.analytics__chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.analytics__chip[aria-pressed='true'] .hint {
+  color: inherit;
+  opacity: 0.75;
 }

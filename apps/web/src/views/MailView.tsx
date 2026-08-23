@@ -824,17 +824,25 @@ export function MailView({
               setNotice(message)
               void refresh()
             }}
-            onView={(sender) => {
+            onView={(patch) => {
               /*
                * Fills the list beside the panel rather than replacing it.
                * Deciding whether 812 messages from an address are junk or
                * receipts is a question you answer by looking, and the answer
-               * has to be reachable without losing the analysis that took
+               * has to be reachable without losing an analysis that took
                * minutes to produce.
+               *
+               * Several senders arrive as one `from:(a OR b)` clause, because
+               * that is a single Gmail query — one page of results to read
+               * rather than one per sender.
                */
-              const next = { ...EMPTY_FILTERS, from: sender.address }
+              const { accountId: scopeId, ...filterPatch } = patch
+              const next = { ...EMPTY_FILTERS, ...filterPatch }
               setFilters(next)
               setApplied(next)
+              // The panel's mailbox chip narrows the list as well; without
+              // this, viewing one account's senders lists every account.
+              if (scopeId !== undefined) setAccountId(scopeId)
               setFolderOnly(false)
               setReading(null)
             }}

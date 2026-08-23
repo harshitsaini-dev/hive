@@ -6,8 +6,10 @@ import { ComposeView } from './views/ComposeView.js'
 import { MailView } from './views/MailView.js'
 import { RulesView } from './views/RulesView.js'
 import {
+  CloseIcon,
   HiveMark,
   LogoutIcon,
+  MenuIcon,
   MailIcon,
   PlusIcon,
   ScheduleIcon,
@@ -202,12 +204,21 @@ export function AppShell({
       <header className="app__bar">
         <button
           type="button"
-          className="app__menu link"
+          className="app__menu"
           aria-expanded={navOpen}
           aria-controls="app-nav"
+          aria-label={navOpen ? 'Close menu' : 'Menu'}
           onClick={() => setNavOpen(!navOpen)}
         >
-          {navOpen ? 'Close' : 'Menu'}
+          {/*
+            No `.link` class on purpose. It carried one, and a later
+            `button.link { display: inline-flex }` rule kept winning the
+            specificity contest against every attempt to hide this on desktop
+            — so a dead "Menu" button sat in the corner of a layout whose
+            sidebar was already fully visible. Its own class, its own rules,
+            no contest to lose.
+          */}
+          {navOpen ? <CloseIcon size={18} /> : <MenuIcon size={18} />}
         </button>
 
         <span className="landing__mark">

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from '../api.js'
+import { ConfirmDialog } from '../ConfirmDialog.js'
 import { AlertIcon, PlusIcon, TrashIcon } from '../Icons.js'
 import { AccountListSkeleton } from '../Skeleton.js'
 
@@ -17,6 +18,9 @@ export function AccountsView({
 }) {
   const [connecting, setConnecting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  /** The account awaiting confirmation before it is disconnected. */
+  const [pendingDisconnect, setPendingDisconnect] =
+    useState<ConnectedAccount | null>(null)
 
   async function connect() {
     setConnecting(true)
@@ -37,13 +41,7 @@ export function AccountsView({
   }
 
   async function disconnect(account: ConnectedAccount) {
-    if (
-      !window.confirm(
-        `Disconnect ${account.gmailAddress}? Hive stops syncing it. Nothing in the mailbox itself changes.`,
-      )
-    ) {
-      return
-    }
+    setPendingDisconnect(null)
 
     try {
       await api.disconnect(account.id)
@@ -113,7 +111,7 @@ export function AccountsView({
                 <button
                   type="button"
                   className="link icon-btn"
-                  onClick={() => void disconnect(account)}
+                  onClick={() => setPendingDisconnect(account)}
                 >
                   <TrashIcon size={15} />
                   Disconnect
@@ -127,6 +125,16 @@ export function AccountsView({
       <div role="alert" aria-live="assertive">
         {actionError && <p className="bad">{actionError}</p>}
       </div>
+
+      {pendingDisconnect && (
+        <ConfirmDialog
+          title={`Disconnect ${pendingDisconnect.gmailAddress}?`}
+          body="Hive stops reading this mailbox and forgets its tokens. Nothing in the mailbox itself changes, and you can connect it again at any time."
+          confirmLabel="Disconnect"
+          onCancel={() => setPendingDisconnect(null)}
+          onConfirm={() => void disconnect(pendingDisconnect)}
+        />
+      )}
     </section>
   )
 }

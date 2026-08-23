@@ -34,14 +34,38 @@ const ANALYSIS = {
   withoutAttachment: 82_409,
   scanned: 5_000,
   truncated: true,
+  accounts: [
+    {
+      accountId: 'acc-1',
+      gmailAddress: 'first@example.test',
+      count: 100_000,
+      withAttachment: 20_000,
+    },
+    {
+      accountId: 'acc-2',
+      gmailAddress: 'second@example.test',
+      count: 3_412,
+      withAttachment: 1_003,
+    },
+  ],
   senders: [
     {
       address: 'kapil@example.test',
       name: 'Kapil Gupta',
       count: 812,
       withAttachment: 96,
+      byAccount: {
+        'acc-1': { count: 800, withAttachment: 90 },
+        'acc-2': { count: 12, withAttachment: 6 },
+      },
     },
-    { address: 'noreply@shop.test', name: 'Shop', count: 240, withAttachment: 0 },
+    {
+      address: 'noreply@shop.test',
+      name: 'Shop',
+      count: 240,
+      withAttachment: 0,
+      byAccount: { 'acc-1': { count: 240, withAttachment: 0 } },
+    },
   ],
 }
 
@@ -95,6 +119,30 @@ async function stub(page: Page, analysis = ANALYSIS): Promise<Seen> {
       }),
     })
   })
+
+  /*
+   * The saved run lives on the server, so it is there from any device. The
+   * stub starts empty and remembers what was analysed, exactly as the real
+   * endpoint does.
+   */
+  await page.route('**/api/messages/analytics/last', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        activeJobId: null,
+        run: seen.analyseBodies.length
+          ? {
+              accountId: null,
+              query: '-in:spam',
+              filters: {},
+              result: analysis,
+              finishedAt: '2026-08-23 12:26:00',
+            }
+          : null,
+      }),
+    }),
+  )
 
   await page.route('**/api/messages/analytics', (route) => {
     seen.analyseBodies.push(route.request().postDataJSON())
@@ -155,6 +203,11 @@ async function openPanel(page: Page) {
   return page.getByRole('complementary', { name: 'Mailbox analysis' })
 }
 
+/** The sender rows, which share their View/Clear labels with the stat cards. */
+function senderRows(panel: ReturnType<Page['getByRole']>) {
+  return panel.locator('.analytics__senders')
+}
+
 test.describe('mailbox analysis', () => {
   test('reports the split between mail with and without attachments', async ({
     page,
@@ -163,9 +216,10 @@ test.describe('mailbox analysis', () => {
     const panel = await openPanel(page)
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
 
-    await expect(panel.getByText('103,412', { exact: true })).toBeVisible()
-    await expect(panel.getByText('21,003', { exact: true })).toBeVisible()
-    await expect(panel.getByText('82,409', { exact: true })).toBeVisible()
+    const cards = panel.locator('.analytics__stat')
+    await expect(cards.nth(0)).toContainText('103,412')
+    await expect(cards.nth(1)).toContainText('21,003')
+    await expect(cards.nth(2)).toContainText('82,409')
 
     // The percentage is stated, not left to be worked out from two numbers.
     await expect(panel.getByText('with attachments (20%)')).toBeVisible()
@@ -221,7 +275,9 @@ test.describe('mailbox analysis', () => {
     await panel.getByRole('option', { name: 'Older than a year' }).click()
 
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
-    await expect(panel.getByText('103,412', { exact: true })).toBeVisible()
+    await expect(panel.locator('.analytics__stat').first()).toContainText(
+      '103,412',
+    )
 
     expect(seen.analyseBodies.at(-1)).toMatchObject({
       accountId: 'acc-2',
@@ -250,8 +306,16 @@ test.describe('mailbox analysis', () => {
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
     await expect(panel.getByText('Kapil Gupta')).toBeVisible()
 
-    page.once('dialog', (dialog) => void dialog.accept())
-    await panel.getByRole('button', { name: 'Clear' }).first().click()
+    await senderRows(panel).getByRole('button', { name: 'Clear' }).first().click()
+
+    /*
+     * The app's own dialog, not `window.confirm` — which titled itself with
+     * the domain name, in the operating system's colours, in the middle of a
+     * themed app, and blocked the page thread while it was up.
+     */
+    const dialog = page.getByRole('alertdialog')
+    await expect(dialog).toContainText('kapil@example.test')
+    await dialog.getByRole('button', { name: 'Move to Trash' }).click()
 
     await expect(page.getByText(/Moved 6 messages/)).toBeVisible()
 
@@ -270,9 +334,10 @@ test.describe('mailbox analysis', () => {
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
     await expect(panel.getByText('Kapil Gupta')).toBeVisible()
 
-    page.once('dialog', (dialog) => void dialog.dismiss())
-    await panel.getByRole('button', { name: 'Clear' }).first().click()
+    await senderRows(panel).getByRole('button', { name: 'Clear' }).first().click()
+    await page.getByRole('button', { name: 'Cancel' }).click()
 
+    await expect(page.getByRole('alertdialog')).toBeHidden()
     await expect(panel.getByText('Kapil Gupta')).toBeVisible()
     expect(seen.trashBodies).toHaveLength(0)
   })
@@ -291,7 +356,7 @@ test('viewing a sender fills the list without closing the analysis', async ({
   await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
   await expect(panel.getByText('Kapil Gupta')).toBeVisible()
 
-  await panel.getByRole('button', { name: 'View' }).first().click()
+  await senderRows(panel).getByRole('button', { name: 'View' }).first().click()
 
   // The list beside it now searches for that sender, across all mail.
   await expect
@@ -331,17 +396,323 @@ test.describe('a finished run is kept', () => {
     const panel = await openPanel(page)
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
     await expect(panel.getByText('Kapil Gupta')).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Clear' }).first()).toBeEnabled()
+    await expect(
+      senderRows(panel).getByRole('button', { name: 'Clear' }).first(),
+    ).toBeEnabled()
 
     await panel.getByRole('button', { name: 'Age', exact: true }).click()
     await panel.getByRole('option', { name: 'Older than a year' }).click()
 
     await expect(panel.getByText(/Filters have changed/)).toBeVisible()
     await expect(
-      panel.getByRole('button', { name: 'Clear' }).first(),
+      senderRows(panel).getByRole('button', { name: 'Clear' }).first(),
     ).toBeDisabled()
 
     // Looking is still fine — it is reading, not destroying.
-    await expect(panel.getByRole('button', { name: 'View' }).first()).toBeEnabled()
+    await expect(
+      senderRows(panel).getByRole('button', { name: 'View' }).first(),
+    ).toBeEnabled()
+  })
+})
+
+/*
+ * Junk arrives in clumps, which is the reason to rank senders at all.
+ * Clearing eleven newsletters one confirmation at a time is eleven chances to
+ * misclick and a lot of waiting.
+ */
+test.describe('acting on several senders at once', () => {
+  test('views a selection as one query', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+
+    await panel.getByLabel('Select kapil@example.test').check()
+    await panel.getByLabel('Select noreply@shop.test').check()
+    await expect(panel.getByText('2 selected · 1,052 messages')).toBeVisible()
+
+    await panel
+      .locator('.analytics__selectbar')
+      .getByRole('button', { name: 'View' })
+      .click()
+
+    // One Gmail query, not one per sender — one page of results to read.
+    await expect
+      .poll(() => decodeURIComponent(seen.searchQueries.at(-1) ?? ''))
+      .toBe('-in:spam from:(kapil@example.test OR noreply@shop.test)')
+  })
+
+  test('clears a selection behind one confirmation', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+
+    await panel.getByLabel('Select all').check()
+    await panel
+      .locator('.analytics__selectbar')
+      .getByRole('button', { name: 'Clear' })
+      .click()
+
+    const dialog = page.getByRole('alertdialog')
+    await expect(dialog).toContainText('2 senders')
+    await dialog.getByRole('button', { name: 'Move to Trash' }).click()
+
+    await expect(page.getByText(/Moved 12 messages from 2 senders/)).toBeVisible()
+
+    /*
+     * One sender per request rather than a single combined query: a partial
+     * failure then leaves a known state instead of one opaque failure
+     * covering all of them.
+     */
+    expect(seen.resolveBodies.map((body) => body.query)).toEqual([
+      '-in:spam from:kapil@example.test -in:trash',
+      '-in:spam from:kapil@example.test -in:trash',
+      '-in:spam from:noreply@shop.test -in:trash',
+      '-in:spam from:noreply@shop.test -in:trash',
+    ])
+
+    // Both rows are gone, and nothing stays ticked.
+    await expect(panel.getByText('Kapil Gupta')).toBeHidden()
+    await expect(panel.getByText('2 selected')).toBeHidden()
+  })
+})
+
+/*
+ * The three totals are the filter. Switching between them costs nothing: a
+ * sender's total and its attachment count already imply the third figure, so
+ * it is arithmetic on a run that has happened rather than another few minutes
+ * of Gmail quota.
+ */
+test.describe('the totals narrow the panel', () => {
+  test('recounts the senders for each of the three views', async ({ page }) => {
+    await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    const busiest = panel.locator('.analytics__senders li').first()
+    await expect(busiest).toContainText('812')
+
+    // 96 of Kapil's 812 carried a file, so "with" shows 96 — and the shop,
+    // which sent none, drops out of the list entirely rather than showing 0.
+    await panel.getByRole('button', { name: /with attachments/ }).click()
+    await expect(busiest).toContainText('96')
+    await expect(panel.getByText('noreply@shop.test')).toBeHidden()
+
+    // And the remainder is the other 716.
+    await panel.getByRole('button', { name: 'without', exact: false }).click()
+    await expect(busiest).toContainText('716')
+    await expect(panel.getByText('noreply@shop.test')).toBeVisible()
+  })
+
+  test('the pressed total scopes what Clear acts on', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    await panel.getByRole('button', { name: /with attachments/ }).click()
+    await senderRows(panel).getByRole('button', { name: 'Clear' }).first().click()
+
+    const dialog = page.getByRole('alertdialog')
+    await dialog.getByRole('button', { name: 'Move to Trash' }).click()
+    await expect(page.getByText(/Moved 6 messages/)).toBeVisible()
+
+    // Looking, too: View from this state must not show mail the number excludes.
+    await senderRows(panel).getByRole('button', { name: 'View' }).first().click()
+    await expect
+      .poll(() => decodeURIComponent(seen.searchQueries.at(-1) ?? ''))
+      .toBe('-in:spam from:kapil@example.test has:attachment')
+
+    /*
+     * `has:attachment` is in the query. Clearing from the attachments view
+     * must not take the sender's attachment-free mail with it — the number
+     * shown said 96, so 96 is what may move.
+     */
+    expect(seen.resolveBodies.at(-1)).toMatchObject({
+      query: '-in:spam has:attachment from:kapil@example.test -in:trash',
+    })
+  })
+})
+
+/*
+ * A scan can take half an hour. Making someone sit and watch it — or lose it
+ * by closing the tab — would make the deep options unusable, which are
+ * exactly the ones a large mailbox needs.
+ */
+test.describe('runs that outlive the page', () => {
+  test('reattaches to a run left going in the background', async ({ page }) => {
+    let polls = 0
+
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'u1', email: 'tester@example.test' },
+        }),
+      }),
+    )
+    await page.route('**/api/accounts', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accounts: ACCOUNTS }),
+      }),
+    )
+    await page.route('**/api/messages?**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: [],
+          nextPageToken: null,
+          accounts: [],
+          skipped: [],
+        }),
+      }),
+    )
+
+    // Nothing stored yet, but a job is running — the state after closing the
+    // tab a minute into a scan.
+    await page.route('**/api/messages/analytics/last', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ run: null, activeJobId: 'job-9' }),
+      }),
+    )
+
+    let started = false
+    await page.route('**/api/messages/analytics', (route) => {
+      started = true
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobId: 'job-9' }),
+      })
+    })
+
+    await page.route('**/api/messages/jobs/job-9', (route) => {
+      polls += 1
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'job-9',
+          action: 'analyze',
+          total: 5000,
+          processed: polls < 2 ? 1200 : 5000,
+          status: polls < 2 ? 'running' : 'done',
+          error: null,
+          result: polls < 2 ? null : ANALYSIS,
+        }),
+      })
+    })
+
+    const panel = await openPanel(page)
+
+    await expect(panel.getByText(/you can close this and come back/)).toBeVisible()
+    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+
+    // It followed the existing job instead of paying for the work twice.
+    expect(started).toBe(false)
+  })
+
+  test('a re-run keeps the previous numbers on screen', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+
+    // Hold the second run open so the in-between state is observable.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await page.route('**/api/messages/jobs/job-1', async (route) => {
+      await held
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'job-1',
+          action: 'analyze',
+          total: 5000,
+          processed: 5000,
+          status: 'done',
+          error: null,
+          result: ANALYSIS,
+        }),
+      })
+    })
+
+    await panel.getByRole('button', { name: 'Run again' }).click()
+
+    /*
+     * Blanking the panel made "Run again" feel like it had destroyed the
+     * answer — and during the minutes a scan takes, the old numbers are still
+     * the best ones there are.
+     */
+    await expect(panel.getByText(/Refreshing — showing the last run/)).toBeVisible()
+    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+    await expect(panel.locator('.analytics__stat').first()).toContainText(
+      '103,412',
+    )
+
+    release()
+    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+    expect(seen.analyseBodies).toHaveLength(2)
+  })
+})
+
+/*
+ * Same trick as the attachment split: the run already recorded who sent what
+ * in which mailbox, so narrowing to one account is arithmetic on work already
+ * paid for rather than another scan.
+ */
+test.describe('narrowing to one mailbox', () => {
+  test('recounts the totals and the senders for that account', async ({
+    page,
+  }) => {
+    await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    const cards = panel.locator('.analytics__stat')
+    await expect(cards.nth(0)).toContainText('103,412')
+
+    await panel.getByRole('button', { name: /second@example.test/ }).click()
+
+    await expect(cards.nth(0)).toContainText('3,412')
+    await expect(cards.nth(1)).toContainText('1,003')
+
+    // Kapil sent 12 of his 812 into this mailbox; the shop sent none, so it
+    // leaves the list rather than sitting there as a zero.
+    await expect(panel.locator('.analytics__senders li').first()).toContainText(
+      '12',
+    )
+    await expect(panel.getByText('noreply@shop.test')).toBeHidden()
+  })
+
+  test('the chosen mailbox scopes what Clear acts on', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    await panel.getByRole('button', { name: /second@example.test/ }).click()
+
+    await senderRows(panel).getByRole('button', { name: 'Clear' }).first().click()
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: 'Move to Trash' })
+      .click()
+
+    /*
+     * One account, not both. A figure of 12 that belongs to one mailbox must
+     * not clear 812 across all of them — the number on screen is the promise
+     * being kept.
+     */
+    await expect(page.getByText(/Moved 3 messages/)).toBeVisible()
+    expect(seen.resolveBodies).toHaveLength(1)
+    expect(seen.resolveBodies.at(-1)).toMatchObject({ accountId: 'acc-2' })
   })
 })

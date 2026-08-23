@@ -1,5 +1,6 @@
 import type { ConnectedAccount } from '@hive/shared-types'
 import { ScheduleIcon } from '../Icons.js'
+import { AnalysisScheduleCard } from '../AnalysisSchedule.js'
 import { RulesPanel } from '../RulesPanel.js'
 import { RuleListSkeleton, Skeleton } from '../Skeleton.js'
 
@@ -29,7 +30,17 @@ export function RulesView({
           <RuleListSkeleton />
         </div>
       ) : (
-        <RulesPanel accounts={accounts} />
+        <>
+          {/*
+            Scheduled work lives together. A cleanup rule and a scheduled
+            analysis are the same kind of promise — something Hive does while
+            nobody is watching — and the difference between them matters
+            enough to be visible side by side: one moves mail, the other only
+            counts it.
+          */}
+          <AnalysisScheduleCard accounts={accounts} />
+          <RulesPanel accounts={accounts} />
+        </>
       )}
     </section>
   )
