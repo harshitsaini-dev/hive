@@ -225,27 +225,97 @@ export async function trashMessages(
   }
 }
 
-/** Encodes an RFC 2822 message the way Gmail's send endpoint expects. */
+export interface OutgoingAttachment {
+  filename: string
+  mimeType: string
+  /** The file's bytes, base64 encoded. */
+  base64: string
+}
+
+/** RFC 2047: any header value with non-ASCII has to be encoded, or it arrives as mojibake. */
+function encodeHeader(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (/^[\x20-\x7E]*$/.test(value)) return value
+  return `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`
+}
+
+/** Base64 in a MIME body must be wrapped, or some servers reject the line length. */
+function wrap76(base64: string): string {
+  return (base64.match(/.{1,76}/g) ?? []).join('\r\n')
+}
+
+/**
+ * Strips anything that could break out of the header.
+ *
+ * A newline in a filename or address would let the caller inject arbitrary
+ * MIME headers — a `Bcc:` of their choosing, for instance. The values here
+ * come from a form, so this is not theoretical.
+ */
+function headerSafe(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim()
+}
+
+/**
+ * Encodes an RFC 2822 message the way Gmail's send endpoint expects.
+ *
+ * Plain text when there are no attachments, `multipart/mixed` when there are —
+ * a multipart envelope around a lone text part is legal but makes every client
+ * show a paperclip for a message with nothing attached.
+ */
 export function buildRawMessage(params: {
   from: string
   to: string
   subject: string
   body: string
+  attachments?: OutgoingAttachment[]
 }): string {
-  const encodedSubject = Buffer.from(params.subject, 'utf8').toString('base64')
+  const attachments = params.attachments ?? []
 
-  const lines = [
-    `From: ${params.from}`,
-    `To: ${params.to}`,
-    // Non-ASCII subjects must be encoded or they arrive as mojibake.
-    `Subject: =?UTF-8?B?${encodedSubject}?=`,
+  const headers = [
+    `From: ${headerSafe(params.from)}`,
+    `To: ${headerSafe(params.to)}`,
+    `Subject: ${encodeHeader(headerSafe(params.subject))}`,
     'MIME-Version: 1.0',
+  ]
+
+  if (attachments.length === 0) {
+    return Buffer.from(
+      [...headers, 'Content-Type: text/plain; charset="UTF-8"', '', params.body].join(
+        '\r\n',
+      ),
+      'utf8',
+    ).toString('base64url')
+  }
+
+  // Long and random enough that it cannot occur inside the content it delimits.
+  const boundary = `hive_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+
+  const parts: string[] = [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
     'Content-Type: text/plain; charset="UTF-8"',
     '',
     params.body,
   ]
 
-  return Buffer.from(lines.join('\r\n'), 'utf8').toString('base64url')
+  for (const attachment of attachments) {
+    const filename = headerSafe(attachment.filename) || 'attachment'
+
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${headerSafe(attachment.mimeType) || 'application/octet-stream'}; name="${filename}"`,
+      `Content-Disposition: attachment; filename="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      wrap76(attachment.base64),
+    )
+  }
+
+  parts.push(`--${boundary}--`, '')
+
+  return Buffer.from(parts.join('\r\n'), 'utf8').toString('base64url')
 }
 
 export async function sendMessage(
@@ -399,5 +469,60 @@ export class ScopeNotGrantedError extends Error {
   constructor(message = 'This account has not granted permission for that') {
     super(message)
     this.name = 'ScopeNotGrantedError'
+  }
+}
+
+/**
+ * Downloads one attachment's bytes.
+ *
+ * Returned as a base64url string, exactly as Gmail sends it — decoding here
+ * would mean holding the whole file as a Buffer twice on the way through.
+ */
+export async function getAttachment(
+  accessToken: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<{ data: string; size: number }> {
+  return gmailJson(
+    accessToken,
+    `/users/me/messages/${messageId}/attachments/${attachmentId}`,
+  )
+}
+
+/**
+ * The display name Gmail itself puts on outgoing mail.
+ *
+ * Without this, messages sent through Hive arrive showing a bare address
+ * while the same person's mail sent from Gmail shows their name — the two
+ * look like different senders, which is exactly the wrong impression for an
+ * app that sends on someone's behalf.
+ *
+ * Reads the default send-as alias. Requires the settings read that the
+ * restricted scope already grants; returns null rather than throwing, since a
+ * missing display name must never block a send.
+ */
+export async function getSendAsDisplayName(
+  accessToken: string,
+  emailAddress: string,
+): Promise<string | null> {
+  try {
+    const response = await gmailFetch(accessToken, '/users/me/settings/sendAs')
+    if (!response.ok) return null
+
+    const body = (await response.json()) as {
+      sendAs?: { sendAsEmail?: string; displayName?: string; isDefault?: boolean }[]
+    }
+
+    const aliases = body.sendAs ?? []
+    const match =
+      aliases.find((alias) => alias.isDefault) ??
+      aliases.find(
+        (alias) =>
+          alias.sendAsEmail?.toLowerCase() === emailAddress.toLowerCase(),
+      )
+
+    return match?.displayName?.trim() || null
+  } catch {
+    return null
   }
 }

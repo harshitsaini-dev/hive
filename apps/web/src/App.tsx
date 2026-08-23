@@ -34,6 +34,18 @@ export function App() {
    * verification requires a stable, linkable URL for each, and people expect
    * to be able to send someone the link.
    */
+  /*
+   * Decided once, at mount, not on every render.
+   *
+   * The callback view rewrites the URL to /accounts as soon as it loads, to
+   * get the single-use code out of history. Re-reading window.location on a
+   * later render — when the session check resolves, say — would then find a
+   * different path and unmount the view mid-exchange, losing the result.
+   */
+  const [isCallback] = useState(
+    () => window.location.pathname === '/auth/google/callback',
+  )
+
   const [legal, setLegal] = useState<LegalKind | null>(() => {
     const path = window.location.pathname
     return path === '/privacy' ? 'privacy' : path === '/terms' ? 'terms' : null
@@ -91,7 +103,7 @@ export function App() {
    * anything that re-routes or re-renders first — the offline screen, the
    * landing page — would throw it away.
    */
-  if (window.location.pathname === '/auth/google/callback') {
+  if (isCallback) {
     return (
       <OAuthCallbackView
         onFinished={() => {

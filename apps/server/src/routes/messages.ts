@@ -3,6 +3,11 @@ import { z } from 'zod'
 import { listAccountsForOwner, writeAuditEntry } from '@hive/db'
 import {
   buildRawMessage,
+  getAttachment,
+  getSendAsDisplayName,
+  mapWithConcurrency,
+  parseMessage,
+  type RawFullMessage,
   getMessageFull,
   getMessageMetadata,
   listAllMessageIds,
@@ -28,11 +33,59 @@ export const messagesRouter: Router = Router()
  */
 const MAX_BULK = 5000
 
+/**
+ * A page can be large — the point of the product is working through thousands
+ * — but every message costs a separate metadata fetch, so the ceiling is a
+ * real one rather than a formality. See PAGE_CONCURRENCY below.
+ */
+const MAX_PAGE_SIZE = 500
+
 const searchSchema = z.object({
   accountId: z.string().min(1).optional(),
   q: z.string().max(500).optional(),
-  pageToken: z.string().max(500).optional(),
+  pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(100),
+  /**
+   * Cursor for the next page.
+   *
+   * Gmail paginates per mailbox, and a merged view spans several, so this is
+   * not one opaque token but a set of them — encoded as JSON so the client
+   * never has to understand the shape. It hands back whatever it was given.
+   */
+  pageToken: z.string().max(4000).optional(),
 })
+
+/** Decodes the per-account cursor set, tolerating anything malformed. */
+function decodeCursors(token: string | undefined): Record<string, string> {
+  if (!token) return {}
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(token, 'base64url').toString('utf8'),
+    )
+    return typeof parsed === 'object' && parsed !== null
+      ? (parsed as Record<string, string>)
+      : {}
+  } catch {
+    // A cursor the client mangled should restart the search, not 500.
+    return {}
+  }
+}
+
+function encodeCursors(cursors: Record<string, string>): string | null {
+  const entries = Object.entries(cursors).filter(([, value]) => value)
+  if (entries.length === 0) return null
+  return Buffer.from(JSON.stringify(Object.fromEntries(entries))).toString(
+    'base64url',
+  )
+}
+
+/**
+ * How many message-metadata fetches run at once, per account.
+ *
+ * Gmail meters roughly 250 quota units a second per user and a metadata fetch
+ * costs 5, so about 50 a second is the ceiling before it starts refusing.
+ * Twenty in flight keeps latency low without walking into 429s.
+ */
+const PAGE_CONCURRENCY = 20
 
 const bulkSchema = z.object({
   accountId: z.string().min(1),
@@ -58,7 +111,7 @@ messagesRouter.get(
     if (!parsed.success) throw badRequest('Invalid search')
 
     const { user } = authed(req)
-    const { accountId, q, pageToken } = parsed.data
+    const { accountId, q, pageSize, pageToken } = parsed.data
 
     const accounts = await listAccountsForOwner(user.id)
     const targets = accountId
@@ -71,20 +124,39 @@ messagesRouter.get(
     // search — one stale account must not hide the others' results.
     const usable = targets.filter((account) => account.status === 'active')
 
+    const cursors = decodeCursors(pageToken)
+
+    /*
+     * On a follow-up page, only ask the accounts that still have one. An
+     * account that ran out would otherwise restart from the top and repeat
+     * its first page on every "load more".
+     */
+    const stillPaging = pageToken
+      ? usable.filter((account) => cursors[account.id])
+      : usable
+
+    /*
+     * Each account gets the full page size rather than a share of it.
+     * Splitting would mean a mailbox with nothing matching wastes its
+     * allocation while a busy one is cut short, and the merged list would be
+     * shorter than asked for with no explanation.
+     */
     const perAccount = await Promise.all(
-      usable.map(async (account) => {
+      stillPaging.map(async (account) => {
         try {
           return await withGmail(user.id, account.id, async (session) => {
             const page = await listMessages(session.accessToken, {
               query: q,
-              pageToken,
-              maxResults: 25,
+              pageToken: cursors[account.id],
+              maxResults: pageSize,
             })
 
-            const messages = await Promise.all(
-              page.messages.map((ref) =>
-                getMessageMetadata(session.accessToken, ref.id),
-              ),
+            // Concurrency-limited: a page of 500 fired at once collects 429s
+            // from Gmail rather than messages.
+            const messages = await mapWithConcurrency(
+              page.messages,
+              PAGE_CONCURRENCY,
+              (ref) => getMessageMetadata(session.accessToken, ref.id),
             )
 
             return {
@@ -117,8 +189,15 @@ messagesRouter.get(
       .flatMap((result) => result.messages)
       .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
 
+    const nextCursors: Record<string, string> = {}
+    for (const result of perAccount) {
+      if (result.nextPageToken) nextCursors[result.accountId] = result.nextPageToken
+    }
+
     res.json({
       messages: merged,
+      // One opaque string the client hands straight back. Null means the end.
+      nextPageToken: encodeCursors(nextCursors),
       accounts: perAccount.map(({ messages: _messages, ...rest }) => rest),
       skipped: targets
         .filter((account) => account.status !== 'active')
@@ -131,7 +210,14 @@ messagesRouter.get(
   }),
 )
 
-/** GET /messages/:id — the full message. Fetched live, never stored. */
+/**
+ * GET /messages/:id — one message, ready to render.
+ *
+ * Fetched live and never stored: the privacy claim is that bodies are not
+ * persisted, and the only way that stays true is by not having a place to put
+ * them. Parsed here rather than in the browser so the client depends on a
+ * stable shape instead of Gmail's MIME tree.
+ */
 messagesRouter.get(
   '/:id',
   requireAuth,
@@ -140,11 +226,52 @@ messagesRouter.get(
     const messageId = req.params.id
     if (!accountId || !messageId) throw badRequest('accountId is required')
 
-    const message = await withGmail(authed(req).user.id, accountId, (session) =>
+    const raw = await withGmail(authed(req).user.id, accountId, (session) =>
       getMessageFull(session.accessToken, messageId),
     )
 
-    res.json({ message })
+    res.json({ message: parseMessage(raw as RawFullMessage) })
+  }),
+)
+
+/**
+ * GET /messages/:id/attachments/:attachmentId — the bytes of one attachment.
+ *
+ * Streamed straight through with a download disposition. Nothing is written to
+ * disk or to the database on the way past.
+ */
+messagesRouter.get(
+  '/:id/attachments/:attachmentId',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const accountId = String(req.query.accountId ?? '')
+    const messageId = req.params.id
+    const attachmentId = req.params.attachmentId
+    if (!accountId || !messageId || !attachmentId) {
+      throw badRequest('accountId is required')
+    }
+
+    // Client-supplied, so it decides the download name — strip anything that
+    // could climb out of a directory or fake a second extension.
+    const filename =
+      String(req.query.filename ?? 'attachment')
+        .replace(/[^\w.\- ]+/g, '_')
+        .slice(0, 120) || 'attachment'
+
+    const { data } = await withGmail(
+      authed(req).user.id,
+      accountId,
+      (session) => getAttachment(session.accessToken, messageId, attachmentId),
+    )
+
+    const bytes = Buffer.from(data, 'base64url')
+
+    // Always a download, never rendered inline: an HTML or SVG attachment
+    // opened in this origin would run script with the session's cookies.
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.send(bytes)
   }),
 )
 
@@ -290,11 +417,30 @@ messagesRouter.post(
   }),
 )
 
+/**
+ * Total attachment budget for one message.
+ *
+ * Gmail refuses anything over 25 MB, and base64 inflates bytes by about a
+ * third — so 18 MB of files is roughly the real ceiling. Rejecting here with a
+ * clear message beats letting Gmail reject it after the upload.
+ */
+const MAX_ATTACHMENT_BYTES = 18 * 1024 * 1024
+
 const sendSchema = z.object({
   accountId: z.string().min(1),
   to: z.string().trim().email('Enter a valid recipient address').max(254),
   subject: z.string().trim().max(998).default(''),
   body: z.string().max(100_000).default(''),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().min(1).max(200),
+        mimeType: z.string().max(120).default('application/octet-stream'),
+        base64: z.string().max(30_000_000),
+      }),
+    )
+    .max(20)
+    .default([]),
 })
 
 /**
@@ -315,17 +461,42 @@ messagesRouter.post(
     }
 
     const { user } = authed(req)
-    const { accountId, to, subject, body } = parsed.data
+    const { accountId, to, subject, body, attachments } = parsed.data
+
+    // Measured from the decoded size, not the base64 length, so the number in
+    // the error is the one the user recognises from their file manager.
+    const totalBytes = attachments.reduce(
+      (sum, file) => sum + Math.floor((file.base64.length * 3) / 4),
+      0,
+    )
+    if (totalBytes > MAX_ATTACHMENT_BYTES) {
+      throw badRequest(
+        `Attachments total ${Math.round(totalBytes / 1024 / 1024)} MB. Gmail allows about ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB.`,
+      )
+    }
 
     const result = await withGmail(user.id, accountId, async (session) => {
+      /*
+       * The display name Gmail itself uses. Without it, mail sent through Hive
+       * shows a bare address while the same person's mail sent from Gmail
+       * shows their name — the two look like different senders.
+       */
+      const displayName = await getSendAsDisplayName(
+        session.accessToken,
+        session.account.gmail_address,
+      )
+
       const raw = buildRawMessage({
         // The From address is the connected mailbox, never client-supplied —
         // Gmail would reject a mismatch anyway, and accepting one invites
         // spoofing attempts against the endpoint.
-        from: session.account.gmail_address,
+        from: displayName
+          ? `${displayName} <${session.account.gmail_address}>`
+          : session.account.gmail_address,
         to,
         subject,
         body,
+        attachments,
       })
 
       let sent
@@ -350,7 +521,7 @@ messagesRouter.post(
         accountId: session.account.id,
         action: 'send',
         // Recipient and subject only. Never the body — see the privacy rules.
-        details: { to, subject },
+        details: { to, subject, attachments: attachments.length },
       })
 
       return { id: sent.id, threadId: sent.threadId }

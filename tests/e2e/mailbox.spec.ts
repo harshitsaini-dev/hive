@@ -142,9 +142,12 @@ test.describe('mailbox', () => {
     await expect(page.getByText('Sender 0', { exact: true })).toBeVisible()
     await expect(page.getByText('Message 0', { exact: true })).toBeVisible()
 
-    const search = page.getByRole('searchbox', { name: 'Search mail' })
-    await expect(search).toHaveAttribute('placeholder', /older_than|from:/)
-    await expect(page.getByText(/has:attachment/)).toBeVisible()
+    // Filters, not syntax: the point is that none of this needs Gmail's
+    // query language typed by hand.
+    await expect(page.getByRole('searchbox', { name: 'Search words' })).toBeVisible()
+    await expect(page.getByLabel('From')).toBeVisible()
+    await expect(page.getByLabel('Has attachment')).toBeVisible()
+    await expect(page.getByLabel('Unread only')).toBeVisible()
   })
 
   test('selecting mail reveals bulk actions', async ({ page }) => {
@@ -152,7 +155,7 @@ test.describe('mailbox', () => {
 
     await page.getByLabel(/Select all 3/).check()
 
-    await expect(page.getByText('3 selected on this page')).toBeVisible()
+    await expect(page.getByText('3 selected', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /Move \d+ to Trash/ })).toBeVisible()
     // Permanent deletion is not offered from the inbox at all.
     await expect(page.getByRole('button', { name: /Delete \d+ forever/ })).toBeHidden()
@@ -315,8 +318,8 @@ test.describe('selecting a whole search', () => {
       .click()
     await expect(page.getByText(/137 selected/)).toBeVisible()
 
-    await page.getByRole('button', { name: 'Just this page instead' }).click()
-    await expect(page.getByText(/3 selected on this page/)).toBeVisible()
+    await page.getByRole('button', { name: /Just what is loaded/ }).click()
+    await expect(page.getByText(/3 selected/)).toBeVisible()
 
     await page.getByRole('button', { name: /Move 3 to Trash/ }).click()
     expect(

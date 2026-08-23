@@ -58,10 +58,35 @@ export interface MessageRow {
 
 export interface SearchResult {
   messages: MessageRow[]
+  /** Opaque; hand it straight back to fetch the next page. Null at the end. */
+  nextPageToken: string | null
   /** Per-account outcome, so one failing mailbox can be named rather than
    *  failing the whole search. */
   accounts: { accountId: string; gmailAddress: string; error: string | null }[]
   skipped: { accountId: string; gmailAddress: string; reason: string }[]
+}
+
+export interface MessageAttachment {
+  attachmentId: string
+  filename: string
+  mimeType: string
+  size: number
+}
+
+export interface ParsedMessage {
+  id: string
+  threadId: string
+  subject: string
+  from: string
+  to: string
+  cc: string
+  date: string
+  labels: string[]
+  snippet: string
+  text: string | null
+  /** Untrusted sender markup. Only ever rendered in a sandboxed frame. */
+  html: string | null
+  attachments: MessageAttachment[]
 }
 
 export interface CleanupRule {
@@ -110,10 +135,17 @@ export const api = {
   disconnect: (id: string) =>
     request<void>(`/accounts/${id}`, { method: 'DELETE' }),
 
-  searchMessages: (options: { q?: string; accountId?: string }) => {
+  searchMessages: (options: {
+    q?: string
+    accountId?: string
+    pageSize?: number
+    pageToken?: string
+  }) => {
     const params = new URLSearchParams()
     if (options.q) params.set('q', options.q)
     if (options.accountId) params.set('accountId', options.accountId)
+    if (options.pageSize) params.set('pageSize', String(options.pageSize))
+    if (options.pageToken) params.set('pageToken', options.pageToken)
     return request<SearchResult>(`/messages?${params.toString()}`)
   },
 
@@ -134,6 +166,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ accountId, query }),
     }),
+
+  getMessage: (accountId: string, messageId: string) => {
+    const params = new URLSearchParams({ accountId })
+    return request<{ message: ParsedMessage }>(
+      `/messages/${messageId}?${params.toString()}`,
+    )
+  },
+
+  /**
+   * A plain URL rather than a fetch: the browser downloads it directly, so a
+   * large attachment never passes through JavaScript memory.
+   */
+  attachmentUrl: (
+    accountId: string,
+    messageId: string,
+    attachmentId: string,
+    filename: string,
+  ) => {
+    const params = new URLSearchParams({ accountId, filename })
+    return `/api/messages/${messageId}/attachments/${attachmentId}?${params.toString()}`
+  },
 
   trashMessages: (accountId: string, messageIds: string[]) =>
     request<{ trashed: number }>('/messages/trash', {
@@ -166,6 +219,7 @@ export const api = {
     to: string
     subject: string
     body: string
+    attachments?: { filename: string; mimeType: string; base64: string }[]
   }) =>
     request<{ id: string; threadId: string }>('/messages/send', {
       method: 'POST',

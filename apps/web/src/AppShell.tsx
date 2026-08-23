@@ -11,16 +11,20 @@ import {
   MailIcon,
   PlusIcon,
   ScheduleIcon,
+  SearchIcon,
   SendIcon,
   TrashIcon,
 } from './Icons.js'
+import { CommandPalette } from './CommandPalette.js'
+import { EMPTY_FILTERS, type Filters } from './MailFilters.js'
 import { StatusScreen } from './StatusScreen.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
-export type ViewId = 'inbox' | 'trash' | 'compose' | 'rules' | 'accounts'
+export type ViewId = 'inbox' | 'sent' | 'trash' | 'compose' | 'rules' | 'accounts'
 
 const NAV = [
   { id: 'inbox', label: 'Inbox', Icon: MailIcon },
+  { id: 'sent', label: 'Sent', Icon: SendIcon },
   { id: 'trash', label: 'Trash', Icon: TrashIcon },
   { id: 'compose', label: 'Compose', Icon: SendIcon },
   { id: 'rules', label: 'Rules', Icon: ScheduleIcon },
@@ -43,8 +47,19 @@ export function AppShell({
   onSignedOut: () => void
   onSessionLost: () => void
 }) {
-  const [view, setView] = useState<ViewId>('inbox')
+  /*
+   * Opens on whatever the URL names, so /accounts is a real destination —
+   * the OAuth callback lands there, and a bookmark to it should work.
+   * Everything else is in-app state; only this one path is addressable.
+   */
+  const [view, setView] = useState<ViewId>(() =>
+    window.location.pathname === '/accounts' ? 'accounts' : 'inbox',
+  )
   const [navOpen, setNavOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  /** Bumped to remount MailView when the palette hands it a new search. */
+  const [searchSeed, setSearchSeed] = useState(0)
+  const [seededFilters, setSeededFilters] = useState<Filters | undefined>()
   const [state, setState] = useState<AccountsState>({
     loading: true,
     accounts: [],
@@ -83,6 +98,22 @@ export function AppShell({
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  /*
+   * Ctrl+K, or Cmd+K on a Mac. Registered on the shell rather than inside the
+   * palette so it works from any view, and preventDefault stops Chrome's own
+   * search-the-page shortcut from firing underneath it.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Choosing a destination on mobile should close the drawer behind you.
   const go = (next: ViewId) => {
@@ -146,10 +177,11 @@ export function AppShell({
   } else {
     body = (
       <MailView
-        key={view}
+        key={`${view}:${searchSeed}`}
         accounts={state.accounts}
         loading={state.loading}
         mode={view}
+        initialFilters={seededFilters}
       />
     )
   }
@@ -173,6 +205,20 @@ export function AppShell({
         </span>
 
         <div className="app__bar-actions">
+          {/*
+            A visible affordance for the shortcut. A keyboard-only feature is
+            a feature most people never discover.
+          */}
+          <button
+            type="button"
+            className="searchtrigger"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <SearchIcon size={15} />
+            <span className="searchtrigger__label">Search all mail</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+
           <ThemeToggle />
           <span className="hint app__user">{user.email}</span>
           <button
@@ -214,6 +260,18 @@ export function AppShell({
 
         <main className="app__main">{body}</main>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSeeAll={(text) => {
+          // Hand the words to the mail view as a filter, and remount it so the
+          // search actually re-runs rather than sitting on stale results.
+          setSeededFilters({ ...EMPTY_FILTERS, text })
+          setSearchSeed((n) => n + 1)
+          setView('inbox')
+        }}
+      />
     </div>
   )
 }

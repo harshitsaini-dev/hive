@@ -2,15 +2,41 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type MessageRow } from '../api.js'
 import { ConfirmDestructive } from '../ConfirmDestructive.js'
-import { AlertIcon, MailIcon, SearchIcon, TrashIcon } from '../Icons.js'
+import { AlertIcon, MailIcon, TrashIcon } from '../Icons.js'
+import {
+  buildQuery,
+  EMPTY_FILTERS,
+  hasAnyFilter,
+  MailFilters,
+  type Filters,
+} from '../MailFilters.js'
+import { MessageReader } from '../MessageReader.js'
 import { MessageListSkeleton } from '../Skeleton.js'
+
+/**
+ * A full page is large on purpose: the product exists to work through
+ * thousands, and paging twenty-five at a time makes that miserable. Every
+ * message costs a separate metadata fetch though, so a page of 500 takes a
+ * few seconds — the server limits concurrency to stay inside Gmail's rate
+ * limit rather than collecting 429s.
+ */
+const PAGE_SIZE = 500
 
 interface Load {
   loading: boolean
   messages: MessageRow[]
   error: string | null
+  nextPageToken: string | null
   /** Per-account failures — one broken mailbox must not hide the others. */
   problems: { gmailAddress: string; reason: string }[]
+}
+
+const EMPTY_LOAD: Load = {
+  loading: true,
+  messages: [],
+  error: null,
+  nextPageToken: null,
+  problems: [],
 }
 
 function formatDate(iso: string): string {
@@ -33,20 +59,19 @@ export function MailView({
   accounts,
   loading: accountsLoading,
   mode,
+  initialFilters,
 }: {
   accounts: ConnectedAccount[]
   loading: boolean
-  mode: 'inbox' | 'trash'
+  mode: 'inbox' | 'sent' | 'trash'
+  /** Pre-applied filters, e.g. from the command palette. */
+  initialFilters?: Filters
 }) {
   const [accountId, setAccountId] = useState('')
-  const [search, setSearch] = useState('')
-  const [applied, setApplied] = useState('')
-  const [load, setLoad] = useState<Load>({
-    loading: true,
-    messages: [],
-    error: null,
-    problems: [],
-  })
+  const [filters, setFilters] = useState<Filters>(initialFilters ?? EMPTY_FILTERS)
+  const [applied, setApplied] = useState<Filters>(initialFilters ?? EMPTY_FILTERS)
+  const [load, setLoad] = useState<Load>(EMPTY_LOAD)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pending, setPending] = useState<'trash' | 'restore' | 'delete' | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -58,14 +83,25 @@ export function MailView({
     limit: number
   } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** The message open in the reading pane, if any. */
+  const [reading, setReading] = useState<{
+    accountId: string
+    messageId: string
+  } | null>(null)
 
-  // Trash is just a different Gmail query; there is no second index.
+  /*
+   * Each view is a Gmail query; there is no second index.
+   *
+   * Inbox is `in:inbox`, not `-in:trash`. Those look equivalent and are not:
+   * the latter matches everything outside the bin, so sent mail, drafts and
+   * spam all showed up in the inbox together.
+   */
+  const scope =
+    mode === 'trash' ? 'in:trash' : mode === 'sent' ? 'in:sent' : 'in:inbox'
+
   const query = useMemo(
-    () =>
-      [mode === 'trash' ? 'in:trash' : '-in:trash', applied]
-        .filter(Boolean)
-        .join(' '),
-    [mode, applied],
+    () => [scope, buildQuery(applied)].filter(Boolean).join(' '),
+    [scope, applied],
   )
 
   const refresh = useCallback(async () => {
@@ -74,16 +110,19 @@ export function MailView({
     setLoad((previous) => ({ ...previous, loading: true, error: null }))
     setSelected(new Set())
     setWholeQuery(null)
+    setReading(null)
 
     try {
       const result = await api.searchMessages({
         q: query,
         accountId: accountId || undefined,
+        pageSize: PAGE_SIZE,
       })
 
       setLoad({
         loading: false,
         messages: result.messages,
+        nextPageToken: result.nextPageToken,
         error: null,
         problems: [
           ...result.accounts
@@ -100,9 +139,8 @@ export function MailView({
       })
     } catch (caught) {
       setLoad({
+        ...EMPTY_LOAD,
         loading: false,
-        messages: [],
-        problems: [],
         error:
           caught instanceof ApiRequestError ? caught.message : 'Could not search.',
       })
@@ -112,6 +150,35 @@ export function MailView({
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  /** Appends the next page rather than replacing — selections survive. */
+  async function loadMore() {
+    if (!load.nextPageToken) return
+
+    setLoadingMore(true)
+    try {
+      const result = await api.searchMessages({
+        q: query,
+        accountId: accountId || undefined,
+        pageSize: PAGE_SIZE,
+        pageToken: load.nextPageToken,
+      })
+
+      setLoad((previous) => ({
+        ...previous,
+        messages: [...previous.messages, ...result.messages],
+        nextPageToken: result.nextPageToken,
+      }))
+    } catch (caught) {
+      setNotice(
+        caught instanceof ApiRequestError
+          ? caught.message
+          : 'Could not load more messages.',
+      )
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const selectedRows = load.messages.filter((message) =>
     selected.has(message.gmailMessageId),
@@ -132,12 +199,9 @@ export function MailView({
   }
 
   /**
-   * Expands the selection from this page to everything the search matches.
-   *
-   * The whole point of the product is clearing thousands at once, and a page
-   * holds twenty-five. Rather than paging through and ticking boxes, the
-   * server resolves the query to a real ID list and a real count — which is
-   * also what lets the confirmation state a number instead of a guess.
+   * Expands the selection from the loaded pages to everything the search
+   * matches. The server resolves the query to a real ID list and a real count,
+   * which is what lets the confirmation state a number instead of a guess.
    */
   async function selectWholeQuery() {
     setResolving(true)
@@ -155,18 +219,16 @@ export function MailView({
         })),
       )
 
-      const rows = resolved.flatMap((result) =>
-        result.messageIds.map((id) => ({
-          accountId: result.accountId,
-          gmailMessageId: id,
-        })),
-      )
-
       setWholeQuery({
-        rows,
+        rows: resolved.flatMap((result) =>
+          result.messageIds.map((id) => ({
+            accountId: result.accountId,
+            gmailMessageId: id,
+          })),
+        ),
         // True when any account hit the server's per-action cap. Surfaced
         // rather than swallowed: otherwise the user believes an action covered
-        // everything when it covered the first 5,000.
+        // everything when it covered the first few thousand.
         truncated: resolved.some((result) => result.truncated),
         limit: resolved[0]?.limit ?? 0,
       })
@@ -216,11 +278,11 @@ export function MailView({
     load.messages.length > 0 && selected.size === load.messages.length
 
   return (
-    <section className="view">
+    <section className={reading ? 'view view--split' : 'view'}>
       <header className="view__head">
         <h1>
           {mode === 'trash' ? <TrashIcon size={20} /> : <MailIcon size={20} />}
-          {mode === 'trash' ? 'Trash' : 'Inbox'}
+          {mode === 'trash' ? 'Trash' : mode === 'sent' ? 'Sent' : 'Inbox'}
         </h1>
         {mode === 'trash' && (
           <p className="hint">
@@ -229,29 +291,23 @@ export function MailView({
         )}
       </header>
 
-      <form
-        className="mailbox__search"
-        onSubmit={(event) => {
-          event.preventDefault()
-          setApplied(search.trim())
-        }}
-      >
-        <label htmlFor="q" className="sr-only">
-          Search mail
-        </label>
-        <div className="search-field">
-          <SearchIcon size={16} />
-          <input
-            id="q"
-            type="search"
-            value={search}
-            placeholder="from:someone older_than:30d has:attachment"
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      {/* List on the left, reading pane on the right when one is open. */}
+      <div className="view__panes">
+        <div className="view__list">
+
+      <div className="filters__wrap">
+        <MailFilters
+          filters={filters}
+          onChange={setFilters}
+          onApply={() => setApplied(filters)}
+          onClear={() => {
+            setFilters(EMPTY_FILTERS)
+            setApplied(EMPTY_FILTERS)
+          }}
+        />
 
         {accounts.length > 1 && (
-          <>
+          <div className="filters__row">
             <label htmlFor="account" className="sr-only">
               Account
             </label>
@@ -267,17 +323,9 @@ export function MailView({
                 </option>
               ))}
             </select>
-          </>
+          </div>
         )}
-
-        <button type="submit">Search</button>
-      </form>
-
-      <p className="hint mailbox__syntax">
-        Gmail search syntax works here — <code>from:</code>, <code>subject:</code>,{' '}
-        <code>older_than:30d</code>, <code>has:attachment</code>,{' '}
-        <code>is:unread</code>.
-      </p>
+      </div>
 
       <div role="status" aria-live="polite">
         {notice && <p className="notice">{notice}</p>}
@@ -301,12 +349,12 @@ export function MailView({
             <span>
               {wholeQuery
                 ? `${targetCount} selected — everything matching this search`
-                : `${selected.size} selected on this page`}
+                : `${selected.size} selected`}
             </span>
 
             {/*
-              The escape hatch from "this page" to "the whole search". Offered
-              only once the page is fully ticked, which is the moment someone
+              The escape hatch from "what is loaded" to "the whole search",
+              offered once everything on screen is ticked — the moment someone
               is obviously trying to select more than they can see.
             */}
             {!wholeQuery && allSelected && (
@@ -327,7 +375,7 @@ export function MailView({
                 disabled={pending !== null}
                 onClick={() => setWholeQuery(null)}
               >
-                Just this page instead
+                Just what is loaded instead
               </button>
             )}
           </div>
@@ -341,9 +389,7 @@ export function MailView({
                 onClick={() => void run('trash', 'Moved to Trash:')}
               >
                 <TrashIcon size={15} />
-                {pending === 'trash'
-                  ? 'Moving…'
-                  : `Move ${targetCount} to Trash`}
+                {pending === 'trash' ? 'Moving…' : `Move ${targetCount} to Trash`}
               </button>
             ) : (
               <>
@@ -381,7 +427,7 @@ export function MailView({
         </p>
       )}
 
-      {busy && <MessageListSkeleton />}
+      {busy && <MessageListSkeleton rows={8} />}
 
       {!busy && load.error && <p className="bad">{load.error}</p>}
 
@@ -389,8 +435,8 @@ export function MailView({
         <p className="hint">
           {mode === 'trash'
             ? 'Trash is empty.'
-            : applied
-              ? 'Nothing matched that search.'
+            : hasAnyFilter(applied)
+              ? 'Nothing matched those filters.'
               : 'No mail here.'}
         </p>
       )}
@@ -409,47 +455,98 @@ export function MailView({
                 )
               }
             />
-            Select all {load.messages.length} on this page
+            Select all {load.messages.length.toLocaleString()} loaded
           </label>
 
           <ul className="messages">
-            {load.messages.map((message) => (
-              <li key={`${message.accountId}:${message.gmailMessageId}`}>
-                <label className="message">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(message.gmailMessageId)}
-                    onChange={(event) => {
-                      const next = new Set(selected)
-                      if (event.target.checked) next.add(message.gmailMessageId)
-                      else next.delete(message.gmailMessageId)
-                      setSelected(next)
-                    }}
-                  />
+            {load.messages.map((message) => {
+              const isOpen =
+                reading?.messageId === message.gmailMessageId &&
+                reading.accountId === message.accountId
 
-                  <span className="message__body">
-                    <span className="message__top">
-                      <strong>{senderName(message.from)}</strong>
-                      <span className="message__date">
-                        {formatDate(message.receivedAt)}
+              return (
+                <li key={`${message.accountId}:${message.gmailMessageId}`}>
+                  <div className="message" data-open={isOpen}>
+                    {/*
+                      The checkbox and the row are separate targets. A single
+                      label wrapping both would mean every attempt to open a
+                      message toggled its checkbox instead.
+                    */}
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${message.subject || 'message'}`}
+                      checked={selected.has(message.gmailMessageId)}
+                      onChange={(event) => {
+                        const next = new Set(selected)
+                        if (event.target.checked) next.add(message.gmailMessageId)
+                        else next.delete(message.gmailMessageId)
+                        setSelected(next)
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      className="message__open"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setReading(
+                          isOpen
+                            ? null
+                            : {
+                                accountId: message.accountId,
+                                messageId: message.gmailMessageId,
+                              },
+                        )
+                      }
+                    >
+                      <span className="message__top">
+                        <strong>{senderName(message.from)}</strong>
+                        <span className="message__date">
+                          {formatDate(message.receivedAt)}
+                        </span>
                       </span>
-                    </span>
-                    <span className="message__subject">
-                      {message.subject || '(no subject)'}
-                    </span>
-                    <span className="message__snippet">{message.snippet}</span>
-                    {accounts.length > 1 && (
-                      <span className="message__account">
-                        {message.gmailAddress}
+                      <span className="message__subject">
+                        {message.subject || '(no subject)'}
                       </span>
-                    )}
-                  </span>
-                </label>
-              </li>
-            ))}
+                      <span className="message__snippet">{message.snippet}</span>
+                      {accounts.length > 1 && (
+                        <span className="message__account">
+                          {message.gmailAddress}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
+
+          {load.nextPageToken && (
+            <div className="loadmore">
+              <button
+                type="button"
+                className="btn-outline"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? 'Loading…' : `Load ${PAGE_SIZE} more`}
+              </button>
+            </div>
+          )}
         </>
       )}
+
+        </div>
+
+        {reading && (
+          <MessageReader
+            key={`${reading.accountId}:${reading.messageId}`}
+            accountId={reading.accountId}
+            messageId={reading.messageId}
+            onClose={() => setReading(null)}
+          />
+        )}
+      </div>
 
       {confirming && (
         <ConfirmDestructive

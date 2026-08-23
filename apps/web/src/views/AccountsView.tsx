@@ -1,33 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from '../api.js'
-import { AlertIcon, CheckIcon, PlusIcon, TrashIcon } from '../Icons.js'
+import { AlertIcon, PlusIcon, TrashIcon } from '../Icons.js'
 import { AccountListSkeleton } from '../Skeleton.js'
-
-/** Reads the outcome the OAuth callback appended to the URL, then clears it. */
-function useConnectOutcome(): string | null {
-  const [outcome, setOutcome] = useState<string | null>(null)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const connected = params.get('connected')
-    if (!connected) return
-
-    const account = params.get('account')
-    setOutcome(
-      connected === 'ok'
-        ? `Connected ${account ?? 'your account'}.`
-        : connected === 'cancelled'
-          ? 'Connection cancelled.'
-          : 'That connection did not complete. Try again.',
-    )
-
-    // Strip the params so a refresh does not replay the message.
-    window.history.replaceState({}, '', window.location.pathname)
-  }, [])
-
-  return outcome
-}
 
 export function AccountsView({
   loading,
@@ -42,7 +17,6 @@ export function AccountsView({
 }) {
   const [connecting, setConnecting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const outcome = useConnectOutcome()
 
   async function connect() {
     setConnecting(true)
@@ -96,12 +70,6 @@ export function AccountsView({
       </header>
 
       <div role="status" aria-live="polite">
-        {outcome && (
-          <p className="notice">
-            <CheckIcon size={16} />
-            {outcome}
-          </p>
-        )}
         {loading && <span className="sr-only">Loading accounts</span>}
       </div>
 

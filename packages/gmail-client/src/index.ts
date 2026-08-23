@@ -210,4 +210,6 @@ export function isHistoryUsable(lastSyncedAt: Date | null, now = new Date()): bo
   return elapsedDays < HISTORY_HORIZON_DAYS
 }
 
+export * from './concurrency.js'
 export * from './messages.js'
+export * from './parse.js'

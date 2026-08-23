@@ -68,13 +68,19 @@ export function OAuthCallbackView({ onFinished }: { onFinished: () => void }) {
       )
   }, [])
 
-  // Straight through on success — there is nothing here worth reading.
+  /*
+   * Moves on by itself once there is nothing left to decide.
+   *
+   * Long enough to actually read — an earlier 400ms on the cancelled path was
+   * a flash nobody could take in, which left it looking like the click had
+   * simply done nothing. Failures do not auto-advance at all: that message is
+   * the only place the reason appears.
+   */
   useEffect(() => {
-    if (outcome.state === 'done' || outcome.state === 'cancelled') {
-      const timer = setTimeout(onFinished, outcome.state === 'done' ? 900 : 400)
-      return () => clearTimeout(timer)
-    }
-    return undefined
+    if (outcome.state !== 'done' && outcome.state !== 'cancelled') return undefined
+
+    const timer = setTimeout(onFinished, 1200)
+    return () => clearTimeout(timer)
   }, [outcome, onFinished])
 
   return (
