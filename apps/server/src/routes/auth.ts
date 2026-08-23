@@ -12,6 +12,7 @@ import {
 import { config } from '../config.js'
 import { hashToken, randomOtpCode, safeEqual } from '../crypto.js'
 import { sendOtpEmail } from '../email.js'
+import { OTP_TTL_MINUTES } from '../emails/otp.js'
 import { asyncRoute, badRequest, tooManyRequests } from '../errors.js'
 import { authed, requireAuth } from '../middleware/auth.js'
 import { rateLimit, resetRateLimits } from '../middleware/rate-limit.js'
@@ -19,7 +20,6 @@ import { endSession, startSession } from '../auth/session.js'
 
 export const authRouter: Router = Router()
 
-const OTP_TTL_MINUTES = 10
 const RATE_WINDOW_MINUTES = 15
 const MAX_CODES_PER_WINDOW = 5
 
@@ -168,13 +168,6 @@ if (!config.isProduction) {
   )
 
   /**
-   * POST /auth/test/reset-rate-limits
-   *
-   * The limiter buckets by IP, and every test shares one. Without a way to
-   * clear it, a test that deliberately trips the limit poisons every test that
-   * runs after it. Registered only outside production, same as the route above.
-   */
-  /**
    * GET /auth/test/rate-limit-probe
    *
    * A dedicated bucket with a tiny allowance, so the limiter can be tested
@@ -190,6 +183,13 @@ if (!config.isProduction) {
     }),
   )
 
+  /**
+   * POST /auth/test/reset-rate-limits
+   *
+   * The limiter buckets by IP, and every test shares one. Without a way to
+   * clear it, a test that deliberately trips the limit poisons every test that
+   * runs after it.
+   */
   authRouter.post(
     '/test/reset-rate-limits',
     asyncRoute(async (_req, res) => {

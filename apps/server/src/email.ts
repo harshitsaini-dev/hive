@@ -1,4 +1,5 @@
 import { config } from './config.js'
+import { renderOtpEmail, OTP_TTL_MINUTES } from './emails/otp.js'
 
 /**
  * Login-code delivery.
@@ -17,10 +18,12 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
     }
 
     console.log(
-      `\n  ┌─ login code for ${to}\n  │  ${code}\n  └─ expires in 10 minutes (not emailed: RESEND_API_KEY unset)\n`,
+      `\n  ┌─ login code for ${to}\n  │  ${code}\n  └─ expires in ${OTP_TTL_MINUTES} minutes (not emailed: RESEND_API_KEY unset)\n`,
     )
     return
   }
+
+  const email = renderOtpEmail(code, OTP_TTL_MINUTES)
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -31,13 +34,12 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
     body: JSON.stringify({
       from: config.OTP_FROM_ADDRESS,
       to,
-      subject: `${code} is your Hive login code`,
-      text: [
-        `Your Hive login code is ${code}.`,
-        '',
-        'It expires in 10 minutes and can only be used once.',
-        'If you did not request it, you can ignore this email.',
-      ].join('\n'),
+      subject: email.subject,
+      html: email.html,
+      // Sent alongside the HTML, not instead of it. A message with no text
+      // part scores worse with spam filters, and this is the one email that
+      // absolutely must not land in spam — it is the only way in.
+      text: email.text,
     }),
   })
 
