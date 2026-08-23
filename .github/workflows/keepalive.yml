@@ -1,0 +1,55 @@
+name: Keep the API awake
+
+# Render's free plan spins an instance down after ~15 minutes of inactivity,
+# and a cold start takes the better part of a minute. Worse, a sleeping
+# instance runs no cron, so scheduled cleanup rules do not fire.
+#
+# This pings the health endpoint often enough to prevent that. It is a
+# workaround, not a fix — read the caveats in docs/04-deployment.md before
+# relying on it, particularly the free instance-hour budget.
+#
+# GitHub's scheduler is best-effort: runs are frequently late and are sometimes
+# skipped entirely under load, and scheduled workflows are disabled altogether
+# on a repository with no pushes for 60 days. So this is the backup, and an
+# external monitor is the primary. Both is deliberate — either alone has a
+# failure mode the other covers.
+
+on:
+  schedule:
+    # Every 10 minutes, comfortably inside the 15-minute idle timeout even
+    # when GitHub runs a few minutes late.
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # so it can be triggered by hand while debugging
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
+
+permissions: {} # Reads nothing, writes nothing.
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping the API
+        run: |
+          # /health deliberately, not /ready: /ready touches Turso, and there
+          # is no reason to run a database query every ten minutes forever
+          # just to keep a process warm.
+          #
+          # --max-time 90 because a cold start is slow and that is exactly the
+          # case worth waiting through.
+          code=$(curl -sS -o /tmp/body.txt -w '%{http_code}' \
+                   --max-time 90 --retry 2 --retry-delay 15 \
+                   https://hive.harshitsaini.in/api/health)
+
+          echo "HTTP $code"
+          cat /tmp/body.txt
+          echo
+
+          if [ "$code" != "200" ]; then
+            echo "::error::API health check returned $code"
+            exit 1
+          fi

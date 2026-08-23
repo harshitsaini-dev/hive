@@ -162,6 +162,61 @@ The GitHub homepage link was removed while the site was not live. Once it is:
 gh repo edit harshitsaini-dev/hive --homepage "https://hive.harshitsaini.in"
 ```
 
+## Keeping the API awake
+
+Render's free plan spins an instance down after about 15 minutes of inactivity.
+Two consequences, and the second is the one that matters:
+
+1. The next request waits through a cold start — slow, but only cosmetic.
+2. **Cron does not run while the instance is asleep.** Scheduled cleanup rules
+   simply do not fire. They are not lost — `findDueRules` decides what is due
+   from each rule's own `last_run_at` in SQL, so a rule that missed its window
+   runs at the next tick after the instance wakes — but "daily" quietly becomes
+   "whenever someone next opens the app".
+
+Two independent pingers, because each covers the other's failure mode:
+
+- **`.github/workflows/keepalive.yml`** — every 10 minutes. GitHub's scheduler
+  is best-effort: runs are often late, sometimes skipped under load, and
+  scheduled workflows are **disabled entirely after 60 days with no pushes to
+  the repository**. Treat this as the backup.
+- **UptimeRobot** — every 5 minutes from dedicated infrastructure, and it also
+  tells you when the thing is actually down. This is the primary.
+
+### Setting up UptimeRobot
+
+1. Sign up at <https://uptimerobot.com> — the free plan allows 50 monitors at
+   5-minute intervals.
+2. **Add New Monitor**
+   - Type: **HTTP(s)**
+   - Friendly name: `Hive API`
+   - URL: `https://hive.harshitsaini.in/api/health`
+   - Interval: **5 minutes**
+3. Add an alert contact (email is enough) so a real outage reaches you.
+4. Optionally add a second monitor for `https://hive.harshitsaini.in/` — that
+   one checks Vercel rather than Render, which is a different failure.
+
+Point it at `/api/health`, not `/api/ready`: `ready` runs a database query, and
+there is no reason to hit Turso every five minutes forever merely to keep a
+process warm. Health checks liveness, which is what is being kept alive.
+
+> **Do not monitor an endpoint that changes anything.** It is worth stating
+> plainly given what this app can do: only `/health` and `/ready` are safe to
+> poll. Everything else requires auth, and nothing that mutates mail should
+> ever be on a timer that is not the cleanup scheduler.
+
+### The cost this quietly incurs
+
+Render's free tier bills **instance hours**, and the allowance at the time of
+writing is 750 per month across the account. Keeping one service awake around
+the clock uses roughly 730–744 hours in a 31-day month.
+
+That fits — but with almost no headroom, and **a second free service would
+blow straight past it**. Check the current allowance on Render's pricing page
+before adding anything else, and decide then whether the tradeoff is still
+worth it. Letting the instance sleep and accepting slow cold starts is a
+perfectly reasonable alternative if scheduled rules are not being used.
+
 ## Known limitations of this topology
 
 - **WebSockets do not survive the Vercel rewrite.** Nothing uses them yet —

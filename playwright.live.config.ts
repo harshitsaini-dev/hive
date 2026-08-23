@@ -15,7 +15,7 @@ export default defineConfig({
   testDir: './tests/live',
   reporter: [['line']],
   use: {
-    baseURL: process.env.HIVE_LIVE_URL ?? 'https://hive-ten-lake.vercel.app',
+    baseURL: process.env.HIVE_LIVE_URL ?? 'https://hive.harshitsaini.in',
     headless: true,
     ...devices['Desktop Chrome'],
   },

@@ -63,8 +63,22 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
   goes straight to Gmail every time. Fine at this scale; the sync engine that
   fills it is what makes it fast later.
 
+## Live
+
+- **App:** https://hive.harshitsaini.in (Vercel)
+- **API:** https://hive-api-s1u3.onrender.com (Render), proxied at - **Database:** Turso, ap-south-1
+- **Login email:** Resend, from 
+Verified end to end on 2026-08-23: landing, privacy, terms, API proxy,
+database readiness, security headers, and a real login code delivered.
+
+ runs browser smoke tests against the deployed site.
+
 ## Next up
 
-1. ~~Phase 8 — design pass.~~ Done: see design-system/MASTER.md.
-2. **Phase 9 — deploy.** Vercel + Render + Turso + Resend, real domain, then
-   restore the repo's homepage link.
+1. **Google verification** (Phase 7) — deferred on purpose. Confirm the CASA
+   tier and price first; see ADR 0002. The app runs in Testing mode, capped at
+   100 users, until then.
+2. **Bulk-trash progress** over the WebSocket — note the Vercel rewrite does
+   not carry WebSockets, so this needs a direct connection to Render.
+3. **The sync engine** that fills , once search volume makes
+   going to Gmail every time feel slow.
