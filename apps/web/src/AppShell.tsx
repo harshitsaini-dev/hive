@@ -185,7 +185,13 @@ export function AppShell({
   } else if (view === 'compose') {
     body = <ComposeView accounts={state.accounts} loading={state.loading} />
   } else if (view === 'rules') {
-    body = <RulesView accounts={state.accounts} loading={state.loading} />
+    body = (
+      <RulesView
+        accounts={state.accounts}
+        loading={state.loading}
+        onChanged={refresh}
+      />
+    )
   } else {
     body = (
       <MailView

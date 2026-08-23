@@ -57,6 +57,8 @@ export interface SyncProgress {
   /** Gmail's own estimate of the mailbox size. An estimate, not a total. */
   estimate: number | null
   backfilling: boolean
+  /** Turned off for this mailbox. What is indexed stays; nothing new is added. */
+  paused: boolean
   lastSyncedAt: string | null
   error: string | null
 }

@@ -123,23 +123,6 @@ export interface AccountTally extends Tally {
   gmailAddress: string
 }
 
-export interface AnalysisSchedule {
-  enabled: boolean
-  cadence: 'daily' | 'weekly'
-  /**
-   * When to run, as minutes past midnight UTC. The server cannot know anyone's
-   * timezone, so the browser converts on the way in and back out — in minutes
-   * rather than hours, because 03:00 in a half-hour zone is 21:30 UTC and
-   * rounding that drifts the schedule an hour every time it round-trips.
-   */
-  minuteUtc: number
-  accountId: string | null
-  query: string
-  scanLimit: number
-  filters: Record<string, string>
-  lastRunAt?: string | null
-}
-
 export interface SavedAnalysis {
   accountId: string | null
   query: string
@@ -318,20 +301,11 @@ export const api = {
       method: 'POST',
     }),
 
-  getAnalysisSchedule: () =>
-    request<{ schedule: AnalysisSchedule | null }>(
-      '/messages/analytics/schedule',
-    ),
-
-  setAnalysisSchedule: (schedule: Omit<AnalysisSchedule, 'lastRunAt'>) =>
-    request<{ ok: true }>('/messages/analytics/schedule', {
+  /** Turns the hourly background sweep on or off for one mailbox. */
+  setIndexing: (accountId: string, paused: boolean) =>
+    request<{ paused: boolean }>(`/accounts/${accountId}/indexing`, {
       method: 'PUT',
-      body: JSON.stringify(schedule),
-    }),
-
-  clearAnalysisSchedule: () =>
-    request<{ ok: true }>('/messages/analytics/schedule', {
-      method: 'DELETE',
+      body: JSON.stringify({ paused }),
     }),
 
   /**

@@ -24,11 +24,12 @@ const BASE = {
 
 interface Seen {
   syncCalls: string[]
+  indexingCalls: unknown[]
   accountsCalls: number
 }
 
 async function stub(page: Page, sync: unknown): Promise<Seen> {
-  const seen: Seen = { syncCalls: [], accountsCalls: 0 }
+  const seen: Seen = { syncCalls: [], indexingCalls: [], accountsCalls: 0 }
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
@@ -44,6 +45,23 @@ async function stub(page: Page, sync: unknown): Promise<Seen> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ accounts: [{ ...BASE, sync }] }),
+    })
+  })
+
+  await page.route('**/api/rules', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rules: [] }),
+    }),
+  )
+
+  await page.route('**/api/accounts/*/indexing', (route) => {
+    seen.indexingCalls.push(route.request().postDataJSON())
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ paused: true }),
     })
   })
 
@@ -72,9 +90,16 @@ async function stub(page: Page, sync: unknown): Promise<Seen> {
   return seen
 }
 
+/** Status lives on Accounts; the controls live with the other background work. */
 async function openAccounts(page: Page) {
   await page.goto('/')
   await page.getByRole('button', { name: 'Accounts' }).click()
+}
+
+async function openIndexing(page: Page) {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Rules' }).click()
+  return page.locator('.card', { hasText: 'Indexing' })
 }
 
 test.describe('index progress', () => {
@@ -85,6 +110,7 @@ test.describe('index progress', () => {
       indexed: 12_500,
       estimate: 103_412,
       backfilling: true,
+      paused: false,
       lastSyncedAt: null,
       error: null,
     })
@@ -100,6 +126,7 @@ test.describe('index progress', () => {
       indexed: 103_412,
       estimate: 103_412,
       backfilling: false,
+      paused: false,
       lastSyncedAt: '2026-08-23 12:00:00',
       error: null,
     })
@@ -119,6 +146,7 @@ test.describe('index progress', () => {
       indexed: 400,
       estimate: 103_412,
       backfilling: true,
+      paused: false,
       lastSyncedAt: null,
       error: 'Gmail is rate limiting this account.',
     })
@@ -132,19 +160,55 @@ test.describe('index progress', () => {
       indexed: 0,
       estimate: null,
       backfilling: true,
+      paused: false,
       lastSyncedAt: null,
       error: null,
     })
-    await openAccounts(page)
+    const card = await openIndexing(page)
 
     const before = seen.accountsCalls
-    await page.getByRole('button', { name: 'Index now' }).click()
+    await card.getByRole('button', { name: 'Index now' }).click()
 
     await expect.poll(() => seen.syncCalls).toEqual(['/api/accounts/acc-1/sync'])
+    await expect
+      .poll(() => seen.accountsCalls, { timeout: 8000 })
+      .toBeGreaterThan(before)
+  })
 
-    // And the list re-reads itself afterwards, so progress actually moves.
-    await expect.poll(() => seen.accountsCalls, { timeout: 8000 }).toBeGreaterThan(
-      before,
-    )
+  /*
+   * Off is a legitimate choice. Someone who connected a mailbox only to send
+   * from it should not pay for a background index supporting a search they
+   * will never run.
+   */
+  test('can be turned off for one mailbox', async ({ page }) => {
+    const seen = await stub(page, {
+      indexed: 400,
+      estimate: 103_412,
+      backfilling: true,
+      paused: false,
+      lastSyncedAt: null,
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await card.getByRole('button', { name: 'Pause' }).click()
+    await expect.poll(() => seen.indexingCalls).toEqual([{ paused: true }])
+  })
+
+  test('a paused mailbox says so and cannot be nudged', async ({ page }) => {
+    const seen = await stub(page, {
+      indexed: 400,
+      estimate: 103_412,
+      backfilling: true,
+      paused: true,
+      lastSyncedAt: null,
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await expect(card.getByText('Paused — 400 indexed so far')).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Index now' })).toBeDisabled()
+    await expect(card.getByRole('button', { name: 'Resume' })).toBeEnabled()
+    expect(seen.syncCalls).toEqual([])
   })
 })

@@ -81,9 +81,30 @@ export async function syncAccount(
     const outcome = await withGmail(ownerId, account.id, async (session) => {
       const state = await getSyncState(account.id)
 
-      return state?.backfill_done === 1 && state.history_id
-        ? incremental(account.id, session.accessToken, state.history_id)
-        : backfill(account.id, session.accessToken, state?.backfill_token ?? null)
+      if (state?.backfill_done === 1) {
+        // Complete but cursorless: the finishing step was interrupted. Take
+        // the cursor now rather than rebuilding an index that is already
+        // correct.
+        if (!state.history_id) {
+          await updateSyncState(account.id, {
+            historyId: (await getProfile(session.accessToken)).historyId,
+          })
+          return {
+            indexed: 0,
+            removed: 0,
+            backfillDone: true,
+            reindexed: false,
+          }
+        }
+
+        return incremental(account.id, session.accessToken, state.history_id)
+      }
+
+      return backfill(
+        account.id,
+        session.accessToken,
+        state?.backfill_token ?? null,
+      )
     })
 
     await updateSyncState(account.id, { lastError: null, touchSynced: true })
@@ -162,20 +183,38 @@ async function backfill(
 
   if (done) {
     /*
-     * The cursor is taken *after* the backfill, not before. Taken first, any
-     * message that arrived during a backfill that ran for an hour would fall
-     * between the two phases and never be indexed at all.
+     * Marked complete first, and the cursor fetched separately.
+     *
+     * These used to be one step, and the ordering lost entire backfills: the
+     * final page leaves no page token, so a failure while fetching the cursor
+     * meant the next pass found neither a token nor a completion flag and
+     * started the whole mailbox again. Hours of work and quota, thrown away
+     * by a request that had nothing to do with the index.
+     *
+     * The cursor is still taken *after* the pages rather than before them —
+     * taken first, anything arriving during a backfill that ran for an hour
+     * would fall between the two phases and never be indexed at all.
      */
-    const historyId = (await getProfile(accessToken)).historyId
-
-    await markAttachments(accountId, accessToken)
-
     await updateSyncState(accountId, {
       backfillDone: true,
       backfillToken: null,
-      historyId,
       indexedCount: await countIndexed(accountId),
     })
+
+    try {
+      await markAttachments(accountId, accessToken)
+      await updateSyncState(accountId, {
+        historyId: (await getProfile(accessToken)).historyId,
+      })
+    } catch (error) {
+      /*
+       * Both are recoverable on their own. Without a cursor the next pass
+       * simply takes one; without the attachment pass the flags stay false
+       * until the next full re-index. Neither is worth discarding a finished
+       * index over.
+       */
+      console.warn(`finishing sync for ${accountId} was incomplete:`, error)
+    }
   } else {
     await updateSyncState(accountId, {
       backfillToken: pageToken ?? null,

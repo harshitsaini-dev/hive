@@ -5,6 +5,7 @@ import {
   findAccountForOwner,
   listAccountsForOwner,
   listSyncStates,
+  updateSyncState,
   upsertAccount,
   writeAuditEntry,
 } from '@hive/db'
@@ -80,6 +81,7 @@ accountsRouter.get(
             indexed: state?.indexed_count ?? 0,
             estimate: state?.total_estimate ?? null,
             backfilling: state ? state.backfill_done === 0 : true,
+            paused: state?.paused === 1,
             lastSyncedAt: state?.last_synced_at ?? null,
             error: state?.last_error ?? null,
           },
@@ -114,6 +116,31 @@ accountsRouter.post(
     void syncAccount(user.id, account).catch((error: unknown) => {
       console.error(`sync for ${account.id} failed:`, error)
     })
+  }),
+)
+
+/**
+ * PUT /accounts/:id/indexing — turn the background sweep on or off.
+ *
+ * Off is a legitimate choice: someone who connected a mailbox only to send
+ * from it should not pay for a background index supporting a search they will
+ * never run. What is already indexed stays; nothing new is added.
+ */
+accountsRouter.put(
+  '/:id/indexing',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const parsed = z.object({ paused: z.boolean() }).safeParse(req.body)
+    if (!parsed.success) throw badRequest('paused must be true or false')
+
+    const account = await findAccountForOwner(
+      req.params.id ?? '',
+      authed(req).user.id,
+    )
+    if (!account) throw notFound('No such account')
+
+    await updateSyncState(account.id, { paused: parsed.data.paused })
+    res.json({ paused: parsed.data.paused })
   }),
 )
 

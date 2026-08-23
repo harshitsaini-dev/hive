@@ -1,11 +1,8 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import {
-  deleteAnalysisSchedule,
   findAnalysisRun,
-  findAnalysisSchedule,
   listAccountsForOwner,
-  saveAnalysisSchedule,
   writeAuditEntry,
 } from '@hive/db'
 import {
@@ -533,80 +530,6 @@ messagesRouter.get(
         finishedAt: row.finished_at,
       },
     })
-  }),
-)
-
-/**
- * The scheduled analysis, if one is set.
- *
- * `minute_utc` goes out as it is stored. The server has no idea what timezone
- * anyone is in, so the browser is the only place the conversion can honestly
- * happen — it sends minutes past midnight UTC and turns them back into a
- * local time to display. Minutes rather than hours because half-hour zones
- * exist and rounding one drifts the schedule; see the migration.
- */
-messagesRouter.get(
-  '/analytics/schedule',
-  requireAuth,
-  asyncRoute(async (req, res) => {
-    const row = await findAnalysisSchedule(authed(req).user.id)
-
-    res.json({
-      schedule: row
-        ? {
-            enabled: row.enabled === 1,
-            cadence: row.cadence,
-            minuteUtc: row.minute_utc,
-            accountId: row.account_id,
-            query: row.query,
-            scanLimit: row.scan_limit,
-            filters: safeParse(row.filters_json, {}),
-            lastRunAt: row.last_run_at,
-          }
-        : null,
-    })
-  }),
-)
-
-const scheduleSchema = z.object({
-  enabled: z.boolean(),
-  cadence: z.enum(['daily', 'weekly']),
-  minuteUtc: z.number().int().min(0).max(1439),
-  accountId: z.string().min(1).nullable().default(null),
-  query: z.string().max(500),
-  scanLimit: z.number().int().min(100).max(MAX_SCAN),
-  filters: z.record(z.string(), z.string()).default({}),
-})
-
-/**
- * PUT /messages/analytics/schedule — set or clear it.
- *
- * There is deliberately no action to schedule alongside this. A scheduled run
- * produces numbers and stores them; clearing mail still needs a person to
- * press the button and confirm. See ADR 0002.
- */
-messagesRouter.put(
-  '/analytics/schedule',
-  requireAuth,
-  asyncRoute(async (req, res) => {
-    const parsed = scheduleSchema.safeParse(req.body)
-    if (!parsed.success) throw badRequest('That schedule is not valid')
-
-    await saveAnalysisSchedule({
-      userId: authed(req).user.id,
-      ...parsed.data,
-    })
-
-    res.json({ ok: true })
-  }),
-)
-
-messagesRouter.delete(
-  '/analytics/schedule',
-  requireAuth,
-  asyncRoute(async (req, res) => {
-    await deleteAnalysisSchedule(authed(req).user.id)
-    res.json({ ok: true })
   }),
 )
 

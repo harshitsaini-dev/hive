@@ -27,10 +27,18 @@ An unverified app in Testing mode gets refresh tokens that expire after seven
 days. For a personal instance this means reconnecting your accounts weekly,
 which is annoying but not broken — Hive surfaces it as `reauth_required`.
 
-To avoid it, either publish your app and go through Google's verification, or
-— if every account you connect belongs to a Google Workspace you administer —
-publish the app **Internal** to that Workspace, which skips verification
-entirely.
+Three ways out, in rough order of how much trouble they are:
+
+1. **Publish without verifying.** Setting the app to "In production" removes
+   the weekly expiry immediately. The trade is a 100-user cap and an
+   unverified-app warning every new user has to click past. This is what the
+   hosted instance does, and for a personal instance it is almost always the
+   right answer.
+2. **Publish Internal**, if every account belongs to a Google Workspace you
+   administer. No warning, no cap, no verification.
+3. **Verify.** Only worth it if the user cap actually binds — and confirm what
+   CASA costs first if you kept the restricted scope. See
+   [ADR 0002](decisions/0002-permanent-delete.md).
 
 ## 2. Permanent delete, if you actually want it
 
@@ -84,6 +92,26 @@ account will need reconnecting.
 npm run db:migrate
 npm run dev
 ```
+
+The server also applies outstanding migrations at boot, so the explicit step
+above is a convenience rather than a requirement — but running it once first
+tells you immediately whether your database credentials are right.
+
+### The message index
+
+Once a mailbox is connected, Hive backfills a local index of message metadata
+in the background: sender, subject, date, labels, snippet, and whether the
+message carries an attachment. **Never message content.**
+
+It matters for self-hosting because of the shape of the work. The first pass
+over a large mailbox reads every message — one Gmail request each, against a
+quota of about 3,000 a minute — so it takes hours, spread across hourly runs
+so it never monopolises the connection. Everything after that is only what
+changed, via Gmail's history feed.
+
+Progress is visible in the Rules view, where it can also be paused per
+mailbox. Pause it if you connected an account only to send from it: searching
+and analysing still work, they just ask Gmail directly and are slower.
 
 ## 5. Deploying
 

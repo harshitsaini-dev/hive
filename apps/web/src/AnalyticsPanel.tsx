@@ -36,20 +36,21 @@ import { Skeleton } from './Skeleton.js'
  */
 
 /*
- * Roughly a minute per three thousand messages, because that is Gmail's quota
- * for reading headers. The labels say so rather than leaving someone to
- * discover it by waiting.
+ * No time estimates on these labels any more.
+ *
+ * They used to read "about a minute", "can take hours", and so on, which was
+ * honest when every run meant a metadata request per message. Once a mailbox
+ * is indexed the same run is a grouped scan and finishes immediately, so the
+ * warnings became wrong for exactly the people most likely to read them —
+ * and a stale scary label is worse than none.
  */
 const SCAN_DEPTHS = [
-  { value: '2000', label: 'Newest 2,000 — about a minute' },
-  { value: '5000', label: 'Newest 5,000 — a few minutes' },
-  { value: '10000', label: 'Newest 10,000 — slow' },
-  { value: '20000', label: 'Newest 20,000 — very slow' },
-  { value: '250000', label: 'Everything — can take hours' },
+  { value: '2000', label: 'Newest 2,000' },
+  { value: '5000', label: 'Newest 5,000' },
+  { value: '10000', label: 'Newest 10,000' },
+  { value: '20000', label: 'Newest 20,000' },
+  { value: '250000', label: 'Everything' },
 ] as const
-
-/** The value that means "no slice, read them all". */
-const EVERYTHING = '250000'
 
 const AGES = [
   { value: '', label: 'Any age' },
@@ -535,16 +536,6 @@ export function AnalyticsPanel({
           onChange={setScanLimit}
         />
 
-        {scanLimit === EVERYTHING && (
-          <p className="hint analytics__warn">
-            <AlertIcon size={14} />
-            Reading who sent a message costs one Gmail request per message, and
-            Gmail allows about three thousand a minute. A hundred thousand
-            messages is over half an hour of fetching — narrowing the dates
-            first is usually the faster way to the same answer.
-          </p>
-        )}
-
         <button
           type="button"
           className="icon-btn"
@@ -605,9 +596,10 @@ export function AnalyticsPanel({
       {!running && !analysis && !error && (
         <p className="hint analytics__intro">
           Counts how much mail matches, how much of it carries a file, and who
-          sent it — then lets you clear a sender out in one go. The two totals
-          cover everything that matches; the sender list reads the newest slice
-          you choose, because that part costs a Gmail request per message.
+          sent it — then lets you clear a sender out in one go. The totals
+          cover everything that matches. So does the sender list once a
+          mailbox has finished indexing; until then it reads the newest slice
+          you choose, and says so.
         </p>
       )}
 

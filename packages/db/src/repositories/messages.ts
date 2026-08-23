@@ -34,6 +34,7 @@ export interface SyncStateRow {
   total_estimate: number | null
   last_error: string | null
   last_synced_at: string | null
+  paused: number
   updated_at: string
 }
 
@@ -231,6 +232,7 @@ export async function updateSyncState(
     indexedCount?: number
     totalEstimate?: number | null
     lastError?: string | null
+    paused?: boolean
     touchSynced?: boolean
   },
 ): Promise<void> {
@@ -265,6 +267,10 @@ export async function updateSyncState(
   if (patch.lastError !== undefined) {
     sets.push('last_error = ?')
     args.push(patch.lastError)
+  }
+  if (patch.paused !== undefined) {
+    sets.push('paused = ?')
+    args.push(patch.paused ? 1 : 0)
   }
   if (patch.touchSynced) sets.push("last_synced_at = datetime('now')")
 

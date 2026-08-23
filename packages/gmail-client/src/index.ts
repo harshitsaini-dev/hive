@@ -167,18 +167,43 @@ export interface GmailProfile {
   historyId: string
 }
 
-/** Which mailbox a set of tokens actually belongs to. */
+/**
+ * Which mailbox a set of tokens actually belongs to.
+ *
+ * Retries a rate limit rather than failing on it. This is called immediately
+ * after a backfill has spent a minute's quota, and Gmail signals an exhausted
+ * per-minute allowance as a **403** whose body says `rateLimitExceeded` —
+ * which reads like a permission problem and was surfaced as one: "Indexing
+ * stopped: Gmail profile request failed (403)" on a mailbox whose tokens were
+ * perfectly fine.
+ */
 export async function getProfile(accessToken: string): Promise<GmailProfile> {
-  const response = await fetch(`${GMAIL_API}/users/me/profile`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  for (let attempt = 1; ; attempt++) {
+    const response = await fetch(`${GMAIL_API}/users/me/profile`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
 
-  if (response.status === 401) throw new ReauthRequiredError()
-  if (!response.ok) {
-    throw new Error(`Gmail profile request failed (${response.status})`)
+    if (response.status === 401) throw new ReauthRequiredError()
+    if (response.ok) return (await response.json()) as GmailProfile
+
+    const detail = await response.text().catch(() => '')
+    const throttled =
+      response.status === 429 ||
+      (response.status === 403 &&
+        /rateLimitExceeded|userRateLimitExceeded|Quota exceeded/i.test(detail))
+
+    // The quota is per minute, so waiting is the entire remedy.
+    if (throttled && attempt < 4) {
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500))
+      continue
+    }
+
+    throw new Error(
+      `Gmail profile request failed (${response.status})${
+        throttled ? ' — rate limited' : ''
+      }`,
+    )
   }
-
-  return (await response.json()) as GmailProfile
 }
 
 /**

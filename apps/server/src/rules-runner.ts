@@ -9,16 +9,14 @@
  */
 import cron, { type ScheduledTask } from 'node-cron'
 import {
-  findDueAnalysisSchedules,
   findDueRules,
   listAllActiveAccounts,
-  markAnalysisScheduleRun,
+  listSyncStates,
   markRuleRun,
   writeAuditEntry,
   type RuleRow,
 } from '@hive/db'
 import { listAllMessageIds, trashMessages } from '@hive/gmail-client'
-import { runAnalysis } from './analysis.js'
 import { syncAccount } from './sync.js'
 import { withGmail } from './gmail.js'
 
@@ -76,7 +74,6 @@ export async function runRule(
 }
 
 let task: ScheduledTask | undefined
-let analysisTask: ScheduledTask | undefined
 let syncTask: ScheduledTask | undefined
 
 /** Stored by this server, but parsed defensively: an older shape is not a crash. */
@@ -145,7 +142,14 @@ export function startRuleScheduler(): void {
         return
       }
 
+      const states = await listSyncStates(accounts.map((row) => row.id))
+      const paused = new Set(
+        states.filter((state) => state.paused === 1).map((s) => s.account_id),
+      )
+
       for (const account of accounts) {
+        if (paused.has(account.id)) continue
+
         try {
           const outcome = await syncAccount(account.owner_id, account)
           if (outcome.indexed > 0 || outcome.removed > 0 || outcome.reindexed) {
@@ -163,66 +167,11 @@ export function startRuleScheduler(): void {
       }
     })()
   })
-
-  /*
-   * Scheduled analyses share the hourly tick but not the loop above, so a
-   * slow scan cannot delay a cleanup rule that is also due.
-   *
-   * Nothing here deletes. A schedule produces numbers and stores them; the
-   * destructive half of the analysis panel needs a person to press Clear and
-   * confirm. See ADR 0002 — an automated irreversible action against a query
-   * written weeks ago is the worst thing this codebase could grow.
-   */
-  analysisTask = cron.schedule('30 * * * *', () => {
-    void (async () => {
-      let due
-      try {
-        due = await findDueAnalysisSchedules()
-      } catch (error) {
-        console.error('could not load due analysis schedules:', error)
-        return
-      }
-
-      if (due.length === 0) return
-      console.log(`running ${due.length} scheduled analysis run(s)`)
-
-      for (const schedule of due) {
-        try {
-          /*
-           * Marked before the run, not after. A scan can take half an hour
-           * and the tick fires every hour; marking afterwards would let a
-           * second run start on top of the first and both would crawl,
-           * fighting each other for the same per-minute quota.
-           */
-          await markAnalysisScheduleRun(schedule.user_id)
-
-          const result = await runAnalysis({
-            userId: schedule.user_id,
-            accountId: schedule.account_id,
-            query: schedule.query,
-            scanLimit: schedule.scan_limit,
-            filters: safeFilters(schedule.filters_json),
-          })
-
-          console.log(
-            `analysis for ${schedule.user_id}: ${result.total} matched, ` +
-              `${result.scanned} scanned`,
-          )
-        } catch (error) {
-          // Usually an account needing reconnection. The next tick tries
-          // again a day later; nothing is lost but a day of freshness.
-          console.error(`analysis for ${schedule.user_id} failed:`, error)
-        }
-      }
-    })()
-  })
 }
 
 export function stopRuleScheduler(): void {
   task?.stop()
   task = undefined
-  analysisTask?.stop()
-  analysisTask = undefined
   syncTask?.stop()
   syncTask = undefined
 }
