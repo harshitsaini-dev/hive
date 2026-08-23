@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { DatePicker } from './DatePicker.js'
 import { SearchIcon } from './Icons.js'
 import { Select } from './Select.js'
 
@@ -199,30 +200,22 @@ export function MailFilters({
         */}
         <span className="formlabel">Between</span>
 
-        <label htmlFor="f-after" className="sr-only">
-          Earliest date
-        </label>
-        <input
-          id="f-after"
-          type="date"
-          className="filters__date"
+        <DatePicker
+          label="Earliest date"
+          placeholder="Any earlier date"
           value={filters.after}
           max={filters.before || undefined}
-          onChange={(event) => set('after', event.target.value)}
+          onChange={(next) => set('after', next)}
         />
 
         <span className="hint">and</span>
 
-        <label htmlFor="f-before" className="sr-only">
-          Latest date
-        </label>
-        <input
-          id="f-before"
-          type="date"
-          className="filters__date"
+        <DatePicker
+          label="Latest date"
+          placeholder="Any later date"
           value={filters.before}
           min={filters.after || undefined}
-          onChange={(event) => set('before', event.target.value)}
+          onChange={(next) => set('before', next)}
         />
 
         {(filters.after || filters.before) && (

@@ -543,6 +543,26 @@ test.describe('how far a search reaches', () => {
   })
 })
 
+/** Drives the custom calendar: open it, set month and year, click the day. */
+async function pickDate(
+  page: Page,
+  field: string,
+  year: number,
+  month: string,
+  day: string,
+) {
+  await page.getByRole('button', { name: field }).click()
+  const panel = page.getByRole('dialog', { name: field })
+
+  // exact, or "Month" also matches the "Previous month" chevron beside it.
+  await panel.getByRole('button', { name: 'Year', exact: true }).click()
+  await panel.getByRole('option', { name: `${year}`, exact: true }).click()
+  await panel.getByRole('button', { name: 'Month', exact: true }).click()
+  await panel.getByRole('option', { name: month, exact: true }).click()
+
+  await panel.getByRole('gridcell', { name: day, exact: true }).click()
+}
+
 /*
  * "Older than a year" cannot express "that job I had in 2019", and the raw
  * Gmail-syntax box is not an answer for someone who came here to avoid
@@ -553,8 +573,8 @@ test.describe('custom date range', () => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByLabel('Earliest date').fill('2019-01-01')
-    await page.getByLabel('Latest date').fill('2019-12-31')
+    await pickDate(page, 'Earliest date', 2019, 'January', '1 Jan 2019')
+    await pickDate(page, 'Latest date', 2019, 'December', '31 Dec 2019')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
 
     /*
@@ -571,14 +591,14 @@ test.describe('custom date range', () => {
     const calls = await stubApi(page)
     await page.goto('/')
 
-    await page.getByLabel('Earliest date').fill('2020-06-15')
+    await pickDate(page, 'Earliest date', 2020, 'June', '15 Jun 2020')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect.poll(() => calls.queries.at(-1)).toBe(
       '-in:spam after:2020/06/15',
     )
 
     await page.getByRole('button', { name: 'Clear dates' }).click()
-    await page.getByLabel('Latest date').fill('2020-06-15')
+    await pickDate(page, 'Latest date', 2020, 'June', '15 Jun 2020')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect.poll(() => calls.queries.at(-1)).toBe(
       '-in:spam before:2020/06/16',

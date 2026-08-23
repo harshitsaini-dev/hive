@@ -36,6 +36,15 @@ export interface MessageAttachment {
   filename: string
   mimeType: string
   size: number
+  /**
+   * The part's `Content-ID`, angle brackets stripped, when it has one.
+   *
+   * This is what the HTML body points at with `src="cid:…"` for an image the
+   * sender embedded rather than attached. Without it the reader has bytes it
+   * could show and markup asking for them, and no way to connect the two —
+   * which is a broken-image icon where the picture should be.
+   */
+  contentId?: string
 }
 
 export interface ParsedMessage {
@@ -92,11 +101,17 @@ function walk(
   // A part with a filename and an attachmentId is a file, whatever its type —
   // an inline image is still something the reader should know about.
   if (filename && part.body?.attachmentId) {
+    const contentId = part.headers
+      ?.find((header) => header.name.toLowerCase() === 'content-id')
+      ?.value.trim()
+      .replace(/^<|>$/g, '')
+
     found.attachments.push({
       attachmentId: part.body.attachmentId,
       filename,
       mimeType: mime || 'application/octet-stream',
       size: part.body.size ?? 0,
+      ...(contentId ? { contentId } : {}),
     })
   } else if (mime === 'text/plain' && found.text === null && part.body?.data) {
     found.text = decodeBody(part.body.data)

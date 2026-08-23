@@ -71,6 +71,9 @@ export interface MessageAttachment {
   filename: string
   mimeType: string
   size: number
+  /** Set when the body embeds this file with `src="cid:…"` rather than
+   *  attaching it at the bottom. */
+  contentId?: string
 }
 
 export interface ParsedMessage {
@@ -195,8 +198,14 @@ export const api = {
     messageId: string,
     attachmentId: string,
     filename: string,
+    /**
+     * Ask for it rendered rather than downloaded. Only honoured when the bytes
+     * really are a raster image — the server decides, not this flag.
+     */
+    inline = false,
   ) => {
     const params = new URLSearchParams({ accountId, filename })
+    if (inline) params.set('inline', '1')
     return `/api/messages/${messageId}/attachments/${attachmentId}?${params.toString()}`
   },
 

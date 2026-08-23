@@ -26,6 +26,37 @@ import { scopeMissing, withGmail } from '../gmail.js'
 export const messagesRouter: Router = Router()
 
 /**
+ * The image type these bytes actually are, or null.
+ *
+ * Magic numbers, not the sender's `Content-Type` and not a query parameter:
+ * both are written by someone else, and the decision being made here is
+ * whether to render something in this origin. Raster formats only — an SVG is
+ * a document that can carry script, so it never qualifies however it is
+ * labelled.
+ */
+function sniffImageType(bytes: Buffer): string | null {
+  if (bytes.length < 12) return null
+
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+    return 'image/png'
+  }
+  if (bytes.subarray(0, 6).toString('latin1').match(/^GIF8[79]a$/)) {
+    return 'image/gif'
+  }
+  if (
+    bytes.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'image/webp'
+  }
+
+  return null
+}
+
+/**
  * A sentence, not Google's error envelope.
  *
  * A rate-limited search used to put six hundred characters of nested JSON on
@@ -289,8 +320,32 @@ messagesRouter.get(
 
     const bytes = Buffer.from(data, 'base64url')
 
-    // Always a download, never rendered inline: an HTML or SVG attachment
-    // opened in this origin would run script with the session's cookies.
+    /*
+     * Inline display, for images only, and only when the bytes themselves say
+     * so.
+     *
+     * Everything else is still a download, because an HTML or SVG attachment
+     * rendered in this origin would run script with the session's cookies.
+     * SVG is an image and is deliberately not on the list for exactly that
+     * reason — it is a document that can carry script.
+     *
+     * The type comes from sniffing the first few bytes rather than from
+     * anything the client or the sender claimed. A caller asking for a
+     * `image/png` that is really HTML gets a download, which is the whole
+     * point of deciding here instead of trusting a parameter.
+     */
+    const sniffed = sniffImageType(bytes)
+    if (req.query.inline === '1' && sniffed) {
+      res.setHeader('Content-Type', sniffed)
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+      res.setHeader('X-Content-Type-Options', 'nosniff')
+      // Belt and braces: even if the sniff were fooled, nothing may load or
+      // run from a document served here.
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox")
+      res.send(bytes)
+      return
+    }
+
     res.setHeader('Content-Type', 'application/octet-stream')
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
     res.setHeader('X-Content-Type-Options', 'nosniff')

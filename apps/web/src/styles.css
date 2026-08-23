@@ -15,6 +15,56 @@ body {
   font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+/*
+ * Scrollbars, everywhere.
+ *
+ * Left alone, every scrolling surface in the app drew the operating system's
+ * default bar: a grey trough with squared-off arrow buttons, sitting against
+ * a dark rounded panel. The two properties below are the standard one, which
+ * Firefox honours, and the WebKit pseudo-elements Chromium and Safari need —
+ * both are set because neither alone covers the browsers this ships to.
+ *
+ * Applied to `*` rather than `body` on purpose: the sidebar, the message list
+ * and the reading pane each scroll in their own box, and a rule on the page
+ * would leave those three looking untouched.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+/* Transparent, so the bar sits on whatever surface it belongs to. */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  /* Padding-box, or the border shows the thumb colour instead of the gap. */
+  background: var(--scrollbar-thumb) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) padding-box;
+}
+
+/* The little stepper arrows are from another era; they take up room and
+   nothing in this app is navigated one line at a time. */
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Where two scrollbars meet — grey by default, which reads as a stray square. */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Visible to assistive technology, not to sighted users. */
 .sr-only {
   position: absolute;
@@ -1676,6 +1726,33 @@ input[type='radio'] {
   overflow-wrap: anywhere;
 }
 
+/* An image attachment gets its picture above its name, not beside it. */
+.reader__attachments li[data-image] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.reader__file {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+/*
+ * Capped rather than scaled to fit: a 4000px photo should not push the rest
+ * of the message off the screen, and a small one should not be blown up into
+ * a blurry banner.
+ */
+.reader__thumb {
+  max-width: 100%;
+  max-height: 22rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  object-fit: contain;
+}
+
 /* Plain text keeps its own line breaks but must still wrap. */
 .reader__text {
   margin: 0;
@@ -2680,4 +2757,171 @@ a.link-plain {
 .selectbar__note {
   flex-basis: 100%;
   font-size: 0.78rem;
+}
+
+/* ---- date picker --------------------------------------------------------- */
+
+/*
+ * Same reason as the custom dropdown: a native date input styles its box and
+ * nothing else, so a dark app dropped a pale browser calendar out of it — a
+ * different pale calendar on every machine.
+ */
+.datepicker {
+  position: relative;
+  display: inline-block;
+}
+
+.datepicker__button {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 11rem;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+}
+
+.datepicker__button:active:not(:disabled) {
+  transform: none;
+}
+
+.datepicker__button svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.datepicker__value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.datepicker__panel {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 19rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.datepicker__head {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+/* The month and year pickers carry the width; the chevrons are for nudging. */
+.datepicker__select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.datepicker__select--year {
+  flex: 0 0 5.5rem;
+}
+
+.datepicker__select .select__button {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.datepicker__nav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  color: var(--ink);
+}
+
+.datepicker__weekdays,
+.datepicker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.15rem;
+}
+
+.datepicker__weekdays span {
+  padding: 0.2rem 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* The grid holds the focus, not its 42 cells — Tab must not walk a month. */
+.datepicker__grid:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.datepicker__day {
+  padding: 0.35rem 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.datepicker__day:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.datepicker__day:active:not(:disabled) {
+  transform: none;
+}
+
+/* Days spilling in from the neighbouring months stay legible but recede. */
+.datepicker__day[data-outside] {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.datepicker__day:disabled {
+  opacity: 0.3;
+}
+
+.datepicker__day[data-today] {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Where the keyboard is, which is not necessarily what is chosen. */
+.datepicker__day[data-cursor] {
+  background: var(--surface-2);
+}
+
+.datepicker__day[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.datepicker__foot {
+  display: flex;
+  justify-content: space-between;
 }

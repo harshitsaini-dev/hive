@@ -242,3 +242,28 @@ export function ChevronDownIcon(props: IconProps) {
     </Icon>
   )
 }
+
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 18-6-6 6-6" />
+    </Icon>
+  )
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m9 18 6-6-6-6" />
+    </Icon>
+  )
+}
+
+export function CalendarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3 10h18" />
+    </Icon>
+  )
+}

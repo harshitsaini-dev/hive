@@ -18,6 +18,15 @@ function formatFullDate(iso: string): string {
   })
 }
 
+/*
+ * Raster formats only, matching what the server will agree to serve inline.
+ * SVG is an image and is deliberately absent: it is a document that can carry
+ * script, so it stays a download however it is labelled.
+ */
+function isImage(mimeType: string): boolean {
+  return /^image\/(jpeg|jpg|png|gif|webp)$/i.test(mimeType)
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -119,33 +128,89 @@ export function MessageReader({
 
           {message.attachments.length > 0 && (
             <ul className="reader__attachments">
-              {message.attachments.map((attachment) => (
-                <li key={attachment.attachmentId}>
-                  <a
-                    href={api.attachmentUrl(
-                      accountId,
-                      message.id,
-                      attachment.attachmentId,
-                      attachment.filename,
-                    )}
-                    download={attachment.filename}
+              {message.attachments.map((attachment) => {
+                const image = isImage(attachment.mimeType)
+
+                return (
+                  <li
+                    key={attachment.attachmentId}
+                    data-image={image || undefined}
                   >
-                    {attachment.filename}
-                  </a>
-                  <span className="hint">{formatBytes(attachment.size)}</span>
-                </li>
-              ))}
+                    {/*
+                      A photo shown as a filename is a photo you have to
+                      download to find out what it is. The thumbnail is the
+                      attachment itself, served inline — the server checks the
+                      bytes really are a raster image before it agrees to
+                      render anything in this origin.
+                    */}
+                    {image && (
+                      <img
+                        className="reader__thumb"
+                        src={api.attachmentUrl(
+                          accountId,
+                          message.id,
+                          attachment.attachmentId,
+                          attachment.filename,
+                          true,
+                        )}
+                        alt={attachment.filename}
+                        loading="lazy"
+                      />
+                    )}
+
+                    <span className="reader__file">
+                      <a
+                        href={api.attachmentUrl(
+                          accountId,
+                          message.id,
+                          attachment.attachmentId,
+                          attachment.filename,
+                        )}
+                        download={attachment.filename}
+                      >
+                        {attachment.filename}
+                      </a>
+                      <span className="hint">
+                        {formatBytes(attachment.size)}
+                      </span>
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
 
-          <MessageBody message={message} />
+          <MessageBody
+            message={message}
+            inlineSrc={(contentId) => {
+              const match = message.attachments.find(
+                (attachment) => attachment.contentId === contentId,
+              )
+              return match
+                ? api.attachmentUrl(
+                    accountId,
+                    message.id,
+                    match.attachmentId,
+                    match.filename,
+                    true,
+                  )
+                : null
+            }}
+          />
         </div>
       )}
     </aside>
   )
 }
 
-function MessageBody({ message }: { message: ParsedMessage }) {
+function MessageBody({
+  message,
+  inlineSrc,
+}: {
+  message: ParsedMessage
+  /** Resolves a `cid:` reference to a URL, or null if nothing matches it. */
+  inlineSrc: (contentId: string) => string | null
+}) {
   const [showHtml, setShowHtml] = useState(false)
 
   if (message.text) {
@@ -168,7 +233,9 @@ function MessageBody({ message }: { message: ParsedMessage }) {
             >
               {showHtml ? 'Hide formatted version' : 'Show formatted version'}
             </button>
-            {showHtml && <HtmlFrame html={message.html} />}
+            {showHtml && (
+              <HtmlFrame html={message.html} inlineSrc={inlineSrc} />
+            )}
           </div>
         )}
       </>
@@ -183,7 +250,7 @@ function MessageBody({ message }: { message: ParsedMessage }) {
           This message has no plain-text version. Shown in an isolated frame
           with remote content and scripts blocked.
         </p>
-        <HtmlFrame html={message.html} />
+        <HtmlFrame html={message.html} inlineSrc={inlineSrc} />
       </>
     )
   }
@@ -209,16 +276,41 @@ function MessageBody({ message }: { message: ParsedMessage }) {
  * at once — the combination lets the frame remove its own sandbox. Never do
  * both.
  */
-function HtmlFrame({ html }: { html: string }) {
+function HtmlFrame({
+  html,
+  inlineSrc,
+}: {
+  html: string
+  inlineSrc: (contentId: string) => string | null
+}) {
   // Small enough that a one-line message does not sit in a tall empty box;
   // measurement replaces it as soon as the frame loads.
   const [height, setHeight] = useState(120)
+
+  /*
+   * `cid:` is how a sender embeds a picture in the body: the markup points at
+   * a Content-ID and the bytes travel as an attachment on the same message.
+   * The frame has no idea what a `cid:` URL means, so every embedded image
+   * rendered as a broken-image icon. Rewritten here to the attachment
+   * endpoint, which is same-origin and therefore allowed by the CSP below.
+   *
+   * Remote `http(s)` images are still blocked and deliberately not rewritten:
+   * loading one tells the sender the message was opened, and that is the
+   * tracking pixel this app refuses to fire.
+   */
+  const resolved = html.replace(
+    /(\ssrc\s*=\s*)(["'])cid:([^"']+)\2/gi,
+    (whole, prefix: string, quote: string, contentId: string) => {
+      const url = inlineSrc(decodeURIComponent(contentId).trim())
+      return url ? `${prefix}${quote}${url}${quote}` : whole
+    },
+  )
 
   const document = `<!doctype html>
 <html><head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;">
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self';">
 <style>
   html, body { margin:0; padding:0; }
   body { padding:14px; font:14px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -227,7 +319,7 @@ function HtmlFrame({ html }: { html: string }) {
   table { max-width:100% !important; }
   a { pointer-events:none; color:inherit; }
 </style>
-</head><body>${html}</body></html>`
+</head><body>${resolved}</body></html>`
 
   function measure(frame: HTMLIFrameElement | null) {
     const body = frame?.contentDocument?.body

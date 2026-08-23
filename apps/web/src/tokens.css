@@ -70,6 +70,8 @@
     --ok: #6cc294;
     --bad: #f08b78;
     --bad-ink: #2a1109;
+    --scrollbar-thumb: #3f382e;
+    --scrollbar-thumb-hover: #574e40;
     --warn-bg: #3a2f14;
     --warn-ink: #f0d69a;
 
@@ -105,6 +107,8 @@
   --ok: #6cc294;
   --bad: #f08b78;
   --bad-ink: #2a1109;
+  --scrollbar-thumb: #3f382e;
+  --scrollbar-thumb-hover: #574e40;
   --warn-bg: #3a2f14;
   --warn-ink: #f0d69a;
 
