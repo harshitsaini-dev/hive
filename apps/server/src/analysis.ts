@@ -17,7 +17,12 @@
  * So the run reads the newest slice up to `scanLimit` and reports exactly how
  * deep it got. The totals beside it are always for everything.
  */
-import { listAccountsForOwner, saveAnalysisRun } from '@hive/db'
+import {
+  getSyncState,
+  listAccountsForOwner,
+  saveAnalysisRun,
+  tallySendersFromIndex,
+} from '@hive/db'
 import { fetchMessagesMetadata, listAllMessageIds } from '@hive/gmail-client'
 import { withGmail } from './gmail.js'
 
@@ -107,6 +112,8 @@ export async function runAnalysis(options: {
   let truncated = false
   const senders = new Map<string, SenderTally>()
   const perAccount: AccountTally[] = []
+  /** How many mailboxes answered from the index rather than from Gmail. */
+  let indexedAccounts = 0
 
   for (const account of accounts) {
     await withGmail(userId, account.id, async (session) => {
@@ -132,6 +139,54 @@ export async function runAnalysis(options: {
       const attachedSet = new Set(attached.ids)
       const slice = all.ids.slice(0, scanLimit)
       if (slice.length < all.ids.length) truncated = true
+
+      /*
+       * The local index, when it has this mailbox.
+       *
+       * This is the whole reason the index exists. The same rollup from Gmail
+       * costs one metadata request per message — half an hour on a
+       * hundred-thousand-message mailbox, every time it is asked. From here
+       * it is a grouped scan, and the scan depth stops mattering because
+       * nothing is being sampled.
+       */
+      const state = await getSyncState(account.id)
+      if (state?.backfill_done === 1) {
+        const rows = await tallySendersFromIndex(account.id, {
+          limit: 500,
+        })
+
+        for (const row of rows) {
+          const { name, address } = splitFrom(row.from_addr)
+          if (!address) continue
+
+          const tally = senders.get(address) ?? {
+            address,
+            name: '',
+            count: 0,
+            withAttachment: 0,
+            byAccount: {},
+          }
+          if (!tally.name && name) tally.name = name
+          tally.count += row.count
+          tally.withAttachment += row.with_attachment
+
+          const forAccount = tally.byAccount[account.id] ?? {
+            count: 0,
+            withAttachment: 0,
+          }
+          forAccount.count += row.count
+          forAccount.withAttachment += row.with_attachment
+          tally.byAccount[account.id] = forAccount
+
+          senders.set(address, tally)
+        }
+
+        // Nothing was sampled, so nothing about the senders is truncated.
+        scanned += all.ids.length
+        indexedAccounts += 1
+        onProgress?.(scanned, scanned)
+        return
+      }
 
       const before = scanned
       const metadata = await fetchMessagesMetadata(
@@ -178,7 +233,9 @@ export async function runAnalysis(options: {
     withAttachment,
     withoutAttachment: Math.max(0, total - withAttachment),
     scanned,
-    truncated,
+    // An indexed mailbox is not sampled, so the sender list is not a slice of
+    // it — saying otherwise would understate an answer that is complete.
+    truncated: indexedAccounts === accounts.length ? false : truncated,
     accounts: perAccount,
     // Ranked, and capped: a thousand rows of one message each is not a
     // finding, and the client would render every one of them.

@@ -312,6 +312,12 @@ export const api = {
       '/messages/analytics/last',
     ),
 
+  /** Advances one mailbox's index by a single pass. Returns straight away. */
+  syncAccount: (accountId: string) =>
+    request<{ started: true }>(`/accounts/${accountId}/sync`, {
+      method: 'POST',
+    }),
+
   getAnalysisSchedule: () =>
     request<{ schedule: AnalysisSchedule | null }>(
       '/messages/analytics/schedule',

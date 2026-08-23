@@ -79,6 +79,22 @@ export async function listAccountsForOwner(
   return result.rows as unknown as AccountRow[]
 }
 
+/**
+ * Every mailbox the scheduler should be keeping current, across all users.
+ *
+ * `reauth_required` accounts are excluded: their tokens are dead, so a sweep
+ * would produce nothing but a failure per tick and a log full of noise. They
+ * come back on their own once reconnected.
+ */
+export async function listAllActiveAccounts(): Promise<AccountRow[]> {
+  const result = await db().execute(
+    `SELECT * FROM connected_accounts
+     WHERE status = 'active'
+     ORDER BY connected_at ASC`,
+  )
+  return result.rows as unknown as AccountRow[]
+}
+
 export async function updateAccountTokens(
   accountId: string,
   encryptedTokens: string,

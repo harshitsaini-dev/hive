@@ -45,12 +45,29 @@ export function canPermanentlyDelete(grantedScope: string): boolean {
  */
 export type AccountStatus = 'active' | 'reauth_required'
 
+/**
+ * How far the local index has got with one mailbox.
+ *
+ * Separate from `status`, which is about OAuth. A mailbox can be perfectly
+ * connected and only a third indexed; conflating the two would either hide a
+ * working account or claim a half-built index is ready to be read from.
+ */
+export interface SyncProgress {
+  indexed: number
+  /** Gmail's own estimate of the mailbox size. An estimate, not a total. */
+  estimate: number | null
+  backfilling: boolean
+  lastSyncedAt: string | null
+  error: string | null
+}
+
 export interface ConnectedAccount {
   id: string
   gmailAddress: string
   status: AccountStatus
   connectedAt: string
   lastSyncedAt: string | null
+  sync?: SyncProgress
 }
 
 export interface MessageSummary {

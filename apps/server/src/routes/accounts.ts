@@ -4,6 +4,7 @@ import {
   deleteAccount,
   findAccountForOwner,
   listAccountsForOwner,
+  listSyncStates,
   upsertAccount,
   writeAuditEntry,
 } from '@hive/db'
@@ -19,6 +20,7 @@ import { config } from '../config.js'
 import { decrypt, encrypt, randomToken, safeEqual } from '../crypto.js'
 import { asyncRoute, badRequest, notFound } from '../errors.js'
 import { authed, requireAuth } from '../middleware/auth.js'
+import { syncAccount } from '../sync.js'
 
 export const accountsRouter: Router = Router()
 
@@ -59,7 +61,59 @@ accountsRouter.get(
   requireAuth,
   asyncRoute(async (req, res) => {
     const rows = await listAccountsForOwner(authed(req).user.id)
-    res.json({ accounts: rows.map(toApiShape) })
+    const states = await listSyncStates(rows.map((row) => row.id))
+    const byAccount = new Map(states.map((state) => [state.account_id, state]))
+
+    res.json({
+      accounts: rows.map((row) => {
+        const state = byAccount.get(row.id)
+
+        return {
+          ...toApiShape(row),
+          /*
+           * The index's own progress, separate from the account's OAuth
+           * status. A mailbox can be perfectly connected and only a third
+           * indexed, and conflating the two would either hide a working
+           * account or claim a half-built index is ready.
+           */
+          sync: {
+            indexed: state?.indexed_count ?? 0,
+            estimate: state?.total_estimate ?? null,
+            backfilling: state ? state.backfill_done === 0 : true,
+            lastSyncedAt: state?.last_synced_at ?? null,
+            error: state?.last_error ?? null,
+          },
+        }
+      }),
+    })
+  }),
+)
+
+/**
+ * POST /accounts/:id/sync — advance the index by one pass, now.
+ *
+ * One pass, not the whole mailbox: a backfill can take hours and a request
+ * cannot. The hourly sweep does the rest, and pressing this again continues
+ * from wherever the last pass stopped.
+ */
+accountsRouter.post(
+  '/:id/sync',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const user = authed(req).user
+    const account = (await listAccountsForOwner(user.id)).find(
+      (row) => row.id === req.params.id,
+    )
+    if (!account) throw notFound('No such account')
+
+    // Answered immediately; the pass carries on server-side. A pass is a
+    // couple of thousand metadata reads and will outlive any sensible
+    // request timeout.
+    res.json({ started: true })
+
+    void syncAccount(user.id, account).catch((error: unknown) => {
+      console.error(`sync for ${account.id} failed:`, error)
+    })
   }),
 )
 

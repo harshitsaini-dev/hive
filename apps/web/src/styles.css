@@ -3293,3 +3293,20 @@ a.link-plain {
   color: inherit;
   opacity: 0.75;
 }
+
+.accounts__who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+}
+
+.accounts__sync {
+  font-size: 0.78rem;
+}
+
+.accounts__actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}

@@ -76,8 +76,11 @@ function Privacy() {
         </li>
         <li>
           <strong>A message index:</strong> sender, subject, date, labels,
-          Gmail&rsquo;s own short preview snippet, and message ID — for each
-          message, so search does not have to call Google every time.
+          Gmail&rsquo;s own short preview snippet, whether the message carries
+          an attachment, and its message ID — so answering &ldquo;who sends me
+          the most&rdquo; does not mean asking Google about every message in
+          the mailbox one at a time. Deleting a mailbox from Hive deletes its
+          index with it.
         </li>
         <li>
           <strong>Your last mailbox analysis:</strong> how many messages

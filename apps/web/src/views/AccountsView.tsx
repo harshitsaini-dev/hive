@@ -21,6 +21,7 @@ export function AccountsView({
   /** The account awaiting confirmation before it is disconnected. */
   const [pendingDisconnect, setPendingDisconnect] =
     useState<ConnectedAccount | null>(null)
+  const [syncing, setSyncing] = useState<string | null>(null)
 
   async function connect() {
     setConnecting(true)
@@ -37,6 +38,34 @@ export function AccountsView({
           : 'Could not start the connection.',
       )
       setConnecting(false)
+    }
+  }
+
+  /**
+   * Nudges one mailbox's index forward.
+   *
+   * The server does one pass and returns immediately — a pass is a couple of
+   * thousand metadata reads and outlives any sensible request timeout. The
+   * hourly sweep does the rest; this is for someone who does not want to wait
+   * an hour to see the index start moving.
+   */
+  async function startSync(accountId: string) {
+    setSyncing(accountId)
+    setActionError(null)
+
+    try {
+      await api.syncAccount(accountId)
+      // Give the first page time to land before asking what changed.
+      await new Promise((resolve) => setTimeout(resolve, 2500))
+      await onChanged()
+    } catch (caught) {
+      setActionError(
+        caught instanceof ApiRequestError
+          ? caught.message
+          : 'Could not start indexing that mailbox.',
+      )
+    } finally {
+      setSyncing(null)
     }
   }
 
@@ -99,7 +128,7 @@ export function AccountsView({
           <ul className="accounts">
             {accounts.map((account) => (
               <li key={account.id}>
-                <div>
+                <div className="accounts__who">
                   <strong>{account.gmailAddress}</strong>
                   {account.status === 'reauth_required' && (
                     <span className="badge badge--warn">
@@ -107,15 +136,47 @@ export function AccountsView({
                       Needs reconnecting
                     </span>
                   )}
+
+                  {/*
+                    Indexing progress, said plainly. A backfill on a large
+                    mailbox is hours of work; leaving it invisible makes the
+                    analysis panel look inconsistent for no apparent reason —
+                    fast for one account, slow for another.
+                  */}
+                  {account.sync && (
+                    <span className="hint accounts__sync">
+                      {account.sync.error
+                        ? `Indexing stopped: ${account.sync.error}`
+                        : account.sync.backfilling
+                          ? `Indexing — ${account.sync.indexed.toLocaleString()}${
+                              account.sync.estimate
+                                ? ` of about ${account.sync.estimate.toLocaleString()}`
+                                : ''
+                            } so far`
+                          : `Indexed ${account.sync.indexed.toLocaleString()} messages`}
+                    </span>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className="link icon-btn"
-                  onClick={() => setPendingDisconnect(account)}
-                >
-                  <TrashIcon size={15} />
-                  Disconnect
-                </button>
+
+                <div className="accounts__actions">
+                  <button
+                    type="button"
+                    className="btn-quiet"
+                    disabled={syncing === account.id}
+                    onClick={() => void startSync(account.id)}
+                  >
+                    {syncing === account.id ? 'Started…' : 'Index now'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="link icon-btn"
+                    onClick={() => setPendingDisconnect(account)}
+                  >
+                    <TrashIcon size={15} />
+                    Disconnect
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

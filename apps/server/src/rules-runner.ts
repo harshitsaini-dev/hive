@@ -11,6 +11,7 @@ import cron, { type ScheduledTask } from 'node-cron'
 import {
   findDueAnalysisSchedules,
   findDueRules,
+  listAllActiveAccounts,
   markAnalysisScheduleRun,
   markRuleRun,
   writeAuditEntry,
@@ -18,6 +19,7 @@ import {
 } from '@hive/db'
 import { listAllMessageIds, trashMessages } from '@hive/gmail-client'
 import { runAnalysis } from './analysis.js'
+import { syncAccount } from './sync.js'
 import { withGmail } from './gmail.js'
 
 /**
@@ -75,6 +77,7 @@ export async function runRule(
 
 let task: ScheduledTask | undefined
 let analysisTask: ScheduledTask | undefined
+let syncTask: ScheduledTask | undefined
 
 /** Stored by this server, but parsed defensively: an older shape is not a crash. */
 function safeFilters(json: string): Record<string, string> {
@@ -121,6 +124,41 @@ export function startRuleScheduler(): void {
           // One broken rule — usually an account needing reconnection — must
           // not stop the others from running.
           console.error(`rule ${rule.id} failed:`, error)
+        }
+      }
+    })()
+  })
+
+  /*
+   * The index sweep. One pass per account per tick, rather than looping until
+   * a mailbox is done: a hundred-thousand-message backfill is hours of work,
+   * and finishing one account before starting the next would leave every
+   * other mailbox cold for those hours.
+   */
+  syncTask = cron.schedule('15 * * * *', () => {
+    void (async () => {
+      let accounts
+      try {
+        accounts = await listAllActiveAccounts()
+      } catch (error) {
+        console.error('could not load accounts to sync:', error)
+        return
+      }
+
+      for (const account of accounts) {
+        try {
+          const outcome = await syncAccount(account.owner_id, account)
+          if (outcome.indexed > 0 || outcome.removed > 0 || outcome.reindexed) {
+            console.log(
+              `sync ${account.id}: +${outcome.indexed} -${outcome.removed}` +
+                `${outcome.reindexed ? ' (re-indexing)' : ''}` +
+                `${outcome.backfillDone ? '' : ' (backfilling)'}`,
+            )
+          }
+        } catch (error) {
+          // Usually an account needing reconnection. Recorded on the row by
+          // syncAccount itself, so the UI can say which one and why.
+          console.error(`sync for ${account.id} failed:`, error)
         }
       }
     })()
@@ -185,4 +223,6 @@ export function stopRuleScheduler(): void {
   task = undefined
   analysisTask?.stop()
   analysisTask = undefined
+  syncTask?.stop()
+  syncTask = undefined
 }
