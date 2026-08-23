@@ -63,7 +63,7 @@ export function MessageReader({
   return (
     <aside className="reader" aria-label="Message">
       <div className="reader__bar">
-        <button type="button" className="link" onClick={onClose}>
+        <button type="button" className="btn-quiet" onClick={onClose}>
           Close
         </button>
       </div>
@@ -163,7 +163,7 @@ function MessageBody({ message }: { message: ParsedMessage }) {
           <div className="reader__htmltoggle">
             <button
               type="button"
-              className="link link--inline"
+              className="btn-quiet"
               onClick={() => setShowHtml(!showHtml)}
             >
               {showHtml ? 'Hide formatted version' : 'Show formatted version'}

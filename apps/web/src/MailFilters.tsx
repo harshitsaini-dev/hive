@@ -200,14 +200,14 @@ export function MailFilters({
 
         <button
           type="button"
-          className="link link--inline"
+          className="btn-quiet"
           onClick={() => setShowRaw(!showRaw)}
         >
           {showRaw ? 'Hide Gmail syntax' : 'Use Gmail syntax'}
         </button>
 
         {hasAnyFilter(filters) && (
-          <button type="button" className="link link--inline" onClick={onClear}>
+          <button type="button" className="btn-quiet" onClick={onClear}>
             Clear filters
           </button>
         )}

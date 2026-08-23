@@ -2408,25 +2408,6 @@ button.link:disabled {
   opacity: 0.5;
 }
 
-/*
- * Inline within a sentence, where a boxed control would break the line.
- * The filter panel's "Use Gmail syntax" sits in a row of checkboxes, so it
- * keeps the underline that marks it as interactive text.
- */
-button.link--inline {
-  padding: 0;
-  border: 0;
-  font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-button.link--inline:hover:not(:disabled) {
-  border-color: transparent;
-  background: none;
-  text-decoration: underline;
-}
-
 /* Links proper — the few that really do navigate. */
 a.link-plain {
   text-decoration: none;
@@ -2459,4 +2440,67 @@ a.link-plain {
   .reader {
     flex: 1.15 1 34rem;
   }
+}
+
+/* ---- quiet buttons ------------------------------------------------------- */
+
+/*
+ * For secondary actions that sit inside or beside content: toggling a panel,
+ * closing the reader, clearing filters.
+ *
+ * These were underlined text for a while, which was wrong twice over —
+ * underlines read as navigation, and a text link gives no hint that it is
+ * pressable until the pointer is already on it. An outlined chip is
+ * unmistakably a control while still staying out of the way of the primary
+ * action next to it.
+ */
+.btn-quiet {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-clay),
+    background var(--duration-fast) var(--ease-clay),
+    color var(--duration-fast) var(--ease-clay);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.btn-quiet:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-pressed);
+}
+
+.btn-quiet:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * Only on keyboard focus. `:focus-visible` rather than `:focus` is what stops
+ * the ring sticking around after a mouse click, which is what made the
+ * toggled state look broken.
+ */
+.btn-quiet:focus {
+  outline: none;
+}
+
+.btn-quiet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
