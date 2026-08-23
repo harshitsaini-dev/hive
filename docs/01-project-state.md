@@ -27,6 +27,10 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
 - **Hardening** — API rate limiting; bodies never persisted; audit trail for
   every connect, disconnect, trash, restore, permanent delete, send and rule
   run.
+- **A local message index** — metadata for every message, backfilled in the
+  background and kept current from Gmail's history feed. Structural searches
+  are answered from it outright; text searches still go to Gmail for the
+  matching and come back hydrated from the index.
 - **Mailbox analysis** — how much mail matches, how much of it carries a
   file, and who sent it. The three totals and the per-mailbox chips are
   filters that narrow everything below them; senders can be selected in bulk
@@ -36,7 +40,10 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
   skeleton loading, custom 404/offline/500/403 screens, installable PWA,
   custom date picker, themed scrollbars, in-app confirmation dialogs.
 
-123 Playwright tests, green headed and headless. CI green.
+140 Playwright tests, green headed and headless — including a mobile suite
+that emulates a phone properly, after the discovery that the previous one
+emulated touch without a touch pointer and so tested none of the rules it was
+written for. CI green.
 
 ## Local setup notes
 
@@ -71,9 +78,21 @@ analysis follows from it:
 
 That is why the mail list paginates rather than loading everything (an
 auto-loading version was built and reverted the same day — it exhausted the
-quota within seconds), why the analysis states exact totals but reads senders
-only to a chosen depth, and why a finished analysis is persisted rather than
+quota within seconds), and why a finished analysis is persisted rather than
 recomputed.
+
+**The index is the answer to that asymmetry**, and it changes the arithmetic
+rather than working around it:
+
+- A **structural** search — folder, sender, dates, attachments, unread — is a
+  SQL query, and comes back with an exact total instead of a page count.
+- A **text** search still goes to Gmail, because Gmail searches message bodies
+  and the index holds none: storing them is what the privacy policy forbids.
+  But Gmail answers with *ids*, which is the cheap half; the rows behind those
+  ids come from the index. So a text search of an indexed mailbox costs one
+  Gmail call however many messages it matches.
+- The **sender rollup** stops being sampled at all, so its "newest N of M"
+  caveat disappears once a mailbox finishes backfilling.
 
 ## Known gaps
 
@@ -89,6 +108,11 @@ recomputed.
   scaled out, a poll could reach a process that never heard of the job. The
   same applies to the in-flight analysis registry that lets a reopened tab
   reattach to a running scan.
+- **The sender name has three sources and no guarantee.** Google's profile
+  (needs the mailbox reconnected since the scope was added), Gmail's `sendAs`
+  alias, and the `From` header of the mailbox's own sent mail. A brand-new
+  account connected without the profile scope and with an empty Sent folder
+  still sends under a bare address.
 - **A cleared sender lingers in the stored analysis** until the next run. The
   row disappears from the screen immediately; correcting the saved copy would
   mean a write per cleared sender, and the figures are already a snapshot of a
@@ -119,14 +143,13 @@ fire — see `docs/04-deployment.md`.
 Nothing outstanding from the roadmap. Possible future work, in rough order of
 value:
 
-1. **The sync engine** that fills `message_index`. This is now the answer to
-   several separate complaints rather than a speculative optimisation: it
-   would make the sender breakdown instant instead of quota-bound, let the
-   mail list show a real total without a second query, and remove most of the
-   rate-limit pressure. It needs a history cursor, a horizon and a full
-   re-index fallback, so it is real work — but the case for it is no longer
-   theoretical.
-2. **Moving jobs to the database**, only if the API is ever scaled past one
+1. **Simplifying the analysis panel.** Its scan-depth selector is close to
+   meaningless now: on an indexed mailbox the depth changes nothing, because
+   nothing is being sampled. Leaving a control that only matters mid-backfill
+   is a small lie about how the feature works.
+2. **An accessibility pass.** Never done systematically — keyboard reach,
+   focus order, contrast, live regions. Cheap now, expensive later.
+3. **Moving jobs to the database**, only if the API is ever scaled past one
    instance.
-3. **Verification**, only if the 100-user cap ever binds — and only after
+4. **Verification**, only if the 100-user cap ever binds — and only after
    confirming what CASA costs. See ADR 0002.
