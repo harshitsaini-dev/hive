@@ -586,14 +586,25 @@ export async function getSendAsDisplayName(
     }
 
     const aliases = body.sendAs ?? []
-    const match =
-      aliases.find((alias) => alias.isDefault) ??
-      aliases.find(
-        (alias) =>
-          alias.sendAsEmail?.toLowerCase() === emailAddress.toLowerCase(),
-      )
 
-    return match?.displayName?.trim() || null
+    /*
+     * The alias for *this* address wins, and the default is only a fallback.
+     *
+     * It was the other way round, which is wrong in both directions. Sending
+     * from a second connected mailbox borrowed the default account's name, and
+     * — the case that actually showed up — when the default alias carried no
+     * display name at all, this returned null and Gmail fell back to showing
+     * the local part of the address. Recipients saw `harshitsaini.dev` where
+     * the name should have been.
+     */
+    const exact = aliases.find(
+      (alias) => alias.sendAsEmail?.toLowerCase() === emailAddress.toLowerCase(),
+    )
+    const named =
+      exact?.displayName?.trim() ||
+      aliases.find((alias) => alias.isDefault)?.displayName?.trim()
+
+    return named || null
   } catch {
     return null
   }
