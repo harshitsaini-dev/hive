@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError, type MessageRow } from '../api.js'
 import { ConfirmDestructive } from '../ConfirmDestructive.js'
 import {
   AlertIcon,
   ChartIcon,
+  DraftIcon,
   MailIcon,
   SearchIcon,
+  SendIcon,
   TrashIcon,
 } from '../Icons.js'
 import {
@@ -18,18 +20,21 @@ import {
   type Filters,
 } from '../MailFilters.js'
 import { AnalyticsPanel } from '../AnalyticsPanel.js'
+import type { MailboxView } from '../AppShell.js'
 import { MessageReader } from '../MessageReader.js'
 import { Select } from '../Select.js'
 import { MessageListSkeleton } from '../Skeleton.js'
 
 /**
- * A full page is large on purpose: the product exists to work through
- * thousands, and paging twenty-five at a time makes that miserable. Every
- * message costs a separate metadata fetch though, so a page of 500 takes a
- * few seconds — the server limits concurrency to stay inside Gmail's rate
- * limit rather than collecting 429s.
+ * A hundred, not five hundred.
+ *
+ * Five hundred was chosen when the product was about bulk cleanup and every
+ * page came from Gmail — fewer, bigger pages meant fewer round trips. Both
+ * halves of that have changed: searches are answered from the local index and
+ * come back with a real total, so the page is a window rather than the answer,
+ * and a hundred rows renders and scrolls far better on a phone.
  */
-const PAGE_SIZE = 500
+const PAGE_SIZE = 100
 
 interface Load {
   loading: boolean
@@ -70,6 +75,41 @@ function senderName(from: string): string {
   return match?.[1]?.trim() || from.replace(/[<>]/g, '')
 }
 
+/**
+ * Folders a search stays inside.
+ *
+ * Searching from the inbox should reach archived mail — that was a real bug
+ * once. Searching from Drafts, Spam or Trash should not: in each the folder
+ * *is* the question, and widening it would answer a different one.
+ */
+function pinnedFolder(mode: MailboxView): boolean {
+  return mode === 'trash' || mode === 'spam' || mode === 'drafts'
+}
+
+const EMPTY: Record<MailboxView, string> = {
+  inbox: 'No mail here.',
+  sent: 'Nothing sent yet.',
+  drafts: 'No drafts.',
+  spam: 'Nothing in Spam.',
+  trash: 'Trash is empty.',
+}
+
+const TITLES: Record<MailboxView, string> = {
+  inbox: 'Inbox',
+  sent: 'Sent',
+  drafts: 'Drafts',
+  spam: 'Spam',
+  trash: 'Trash',
+}
+
+const ICONS: Record<MailboxView, typeof MailIcon> = {
+  inbox: MailIcon,
+  sent: SendIcon,
+  drafts: DraftIcon,
+  spam: AlertIcon,
+  trash: TrashIcon,
+}
+
 export function MailView({
   accounts,
   loading: accountsLoading,
@@ -79,7 +119,7 @@ export function MailView({
 }: {
   accounts: ConnectedAccount[]
   loading: boolean
-  mode: 'inbox' | 'sent' | 'trash'
+  mode: MailboxView
   /** Pre-applied filters, e.g. from the command palette. */
   initialFilters?: Filters
   /**
@@ -147,15 +187,24 @@ export function MailView({
    */
   const searching = hasAnyFilter(applied)
   const spansAll =
-    !folderOnly && (everywhere || (searching && mode !== 'trash'))
+    !folderOnly && (everywhere || (searching && !pinnedFolder(mode)))
 
-  const scope = spansAll
-    ? '-in:spam'
-    : mode === 'trash'
-      ? 'in:trash'
-      : mode === 'sent'
-        ? 'in:sent'
-        : 'in:inbox'
+  /*
+   * `in:drafts` and `in:spam` are folders Gmail keeps out of everything else,
+   * so an "all mail" search still excludes them — a draft you have not sent
+   * and a message Gmail already judged are both answers to a different
+   * question than "where is that email".
+   */
+  const FOLDER: Record<MailboxView, string> = {
+    inbox: 'in:inbox',
+    sent: 'in:sent',
+    drafts: 'in:drafts',
+    spam: 'in:spam',
+    trash: 'in:trash',
+  }
+
+  const pinned = mode === 'trash' || mode === 'spam' || mode === 'drafts'
+  const scope = spansAll ? '-in:spam' : FOLDER[mode]
 
   const query = useMemo(
     () => [scope, buildQuery(applied)].filter(Boolean).join(' '),
@@ -317,6 +366,153 @@ export function MailView({
     }
   }, [load.loading, load.nextPageToken, load.total, total, query, accountId, accounts])
 
+  /*
+   * Selecting more than one thing, the way every file manager does.
+   *
+   * Ticking five hundred boxes one at a time is not a feature, and "select
+   * page / select all" only covers the two extremes. What was missing is the
+   * middle: a run of rows, or a few scattered ones.
+   *
+   *   - click              toggles that row
+   *   - shift-click        selects the run from the last click to this one
+   *   - drag across boxes  selects what the pointer passes over
+   *   - Ctrl/Cmd+A         selects the page, and again clears it
+   *
+   * The anchor is the last row clicked without Shift, which is what makes a
+   * range repeatable: shift-clicking twice from the same anchor replaces the
+   * range rather than growing it.
+   */
+  const anchor = useRef<number | null>(null)
+  const dragAdds = useRef(true)
+
+  const idAt = (index: number) => load.messages[index]?.gmailMessageId
+
+  /*
+   * Every one of these updates through the setter rather than from `selected`
+   * directly. A drag fires a handler per row crossed, faster than React
+   * re-renders, so reading the state variable means each step builds on the
+   * value from the render it was created in — and the last one silently wins.
+   */
+  function applyRange(from: number, to: number, add: boolean) {
+    const [start, end] = from <= to ? [from, to] : [to, from]
+
+    setSelected((current) => {
+      const next = new Set(current)
+
+      for (let i = start; i <= end; i++) {
+        const id = idAt(i)
+        if (!id) continue
+        if (add) next.add(id)
+        else next.delete(id)
+      }
+
+      return next
+    })
+  }
+
+  function toggleOne(index: number) {
+    const id = idAt(index)
+    if (!id) return
+
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    anchor.current = index
+  }
+
+  /**
+   * Shift-click: the run from the last plain click to this one.
+   *
+   * The range takes the sense of the row it started from, so shift-clicking
+   * inside a selected block clears the block rather than re-selecting what is
+   * already selected. Without an anchor there is no run, so it is a plain
+   * toggle.
+   */
+  function selectRangeTo(index: number) {
+    const from = anchor.current
+    if (from === null) {
+      toggleOne(index)
+      return
+    }
+
+    const anchorId = idAt(from)
+    const [start, end] = from <= index ? [from, index] : [index, from]
+
+    /*
+     * Whether this range selects or clears is decided *inside* the setter,
+     * from the state React is about to update — not from the `selected` this
+     * handler closed over. Read from outside it was one render behind, and
+     * the range came out inverted or one row short depending on how the last
+     * click had landed.
+     */
+    setSelected((current) => {
+      const add = anchorId ? current.has(anchorId) : true
+      const next = new Set(current)
+
+      for (let i = start; i <= end; i++) {
+        const id = idAt(i)
+        if (!id) continue
+        if (add) next.add(id)
+        else next.delete(id)
+      }
+
+      return next
+    })
+  }
+
+  function beginDrag(index: number) {
+    const id = idAt(index)
+    if (!id) return
+
+    // The drag paints the opposite of what the row it started on already is,
+    // decided before the click that follows flips it.
+    dragAdds.current = !selected.has(id)
+    anchor.current = index
+  }
+
+  /** While the button is held, the pointer paints the same decision along. */
+  function extendDrag(index: number) {
+    if (anchor.current === null) return
+
+
+    // A range from the anchor rather than one row at a time: a fast drag
+    // skips enter events, and a range cannot miss what it skipped.
+    applyRange(anchor.current, index, dragAdds.current)
+  }
+
+  /*
+   * Ctrl/Cmd+A selects the page, and again clears it.
+   *
+   * Ignored while a text field has focus, where the browser's own "select all
+   * the text I am typing" is obviously what was meant.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'a' || !(event.ctrlKey || event.metaKey)) {
+        return
+      }
+
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) {
+        return
+      }
+
+      event.preventDefault()
+      setSelected((current) =>
+        current.size === load.messages.length
+          ? new Set()
+          : new Set(load.messages.map((message) => message.gmailMessageId)),
+      )
+    }
+
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [load.messages])
+
   const selectedRows = load.messages.filter((message) =>
     selected.has(message.gmailMessageId),
   )
@@ -465,18 +661,13 @@ export function MailView({
         <h1>
           {spansAll ? (
             <SearchIcon size={20} />
-          ) : mode === 'trash' ? (
-            <TrashIcon size={20} />
           ) : (
-            <MailIcon size={20} />
+            (() => {
+              const Icon = ICONS[mode]
+              return <Icon size={20} />
+            })()
           )}
-          {spansAll
-            ? 'Search results'
-            : mode === 'trash'
-              ? 'Trash'
-              : mode === 'sent'
-                ? 'Sent'
-                : 'Inbox'}
+          {spansAll ? 'Search results' : TITLES[mode]}
         </h1>
 
         {spansAll && (
@@ -488,7 +679,7 @@ export function MailView({
                 className="btn-quiet"
                 onClick={() => setFolderOnly(true)}
               >
-                Only search {mode === 'sent' ? 'Sent' : 'Inbox'}
+                Only search {TITLES[mode]}
               </button>
             )}
           </p>
@@ -496,8 +687,7 @@ export function MailView({
 
         {!spansAll && searching && mode !== 'trash' && (
           <p className="hint view__scope">
-            Searching {mode === 'sent' ? 'Sent' : 'Inbox'} only — archived mail
-            is not included.
+            Searching {TITLES[mode]} only — archived mail is not included.
             <button
               type="button"
               className="btn-quiet"
@@ -511,6 +701,20 @@ export function MailView({
         {!spansAll && mode === 'trash' && (
           <p className="hint">
             Gmail empties this automatically after thirty days.
+          </p>
+        )}
+
+        {!spansAll && mode === 'spam' && (
+          <p className="hint">
+            Gmail put these here. It empties Spam automatically after thirty
+            days, so there is usually nothing to do.
+          </p>
+        )}
+
+        {!spansAll && mode === 'drafts' && (
+          <p className="hint">
+            Messages you started and have not sent. Hive cannot edit a draft
+            yet — open one to read it, or clear it out from here.
           </p>
         )}
 
@@ -605,7 +809,15 @@ export function MailView({
           </div>
 
           <div className="bulkbar__actions">
-            {mode === 'inbox' ? (
+            {/*
+              Branching on Trash, not on Inbox.
+              It read `mode === 'inbox'`, which was harmless while Inbox and
+              Trash were the only two lists — and the moment Sent, Drafts and
+              Spam existed it offered *permanent deletion* in all three. ADR
+              0002 puts that behind one type-to-confirm dialog in one place;
+              this is that place, and nowhere else.
+            */}
+            {mode !== 'trash' ? (
               <button
                 type="button"
                 className="icon-btn"
@@ -683,13 +895,13 @@ export function MailView({
 
       {!busy && !load.error && load.messages.length === 0 && (
         <p className="hint">
-          {mode === 'trash'
-            ? 'Trash is empty.'
+          {pinnedFolder(mode)
+            ? EMPTY[mode]
             : !searching
               ? 'No mail here.'
               : spansAll
                 ? 'Nothing in any folder matched those filters.'
-                : `Nothing in ${mode === 'sent' ? 'Sent' : 'Inbox'} matched — try searching all mail.`}
+                : `Nothing in ${TITLES[mode]} matched — try searching all mail.`}
         </p>
       )}
 
@@ -738,6 +950,11 @@ export function MailView({
               appears only in message 9,000 still finds it. Worth saying,
               because a visible list of 500 implies otherwise.
             */}
+            <span className="hint selectbar__hint">
+              Shift-click for a range, drag across the boxes, Ctrl+A for the
+              page.
+            </span>
+
             <span className="hint selectbar__note">
               {spansAll
                 ? 'Results come from every folder of every account, however many there are.'
@@ -745,15 +962,48 @@ export function MailView({
             </span>
           </div>
 
-          <ul className="messages">
-            {load.messages.map((message) => {
+          <ul
+            className="messages"
+            /*
+             * The drag reads the pointer, not `mouseenter`.
+             *
+             * Enter events are missable by design: a fast drag jumps whole
+             * rows between frames and simply never enters them, and a
+             * re-render mid-drag can move the element out from under the
+             * pointer without firing anything at all. Asking what is under
+             * the cursor cannot skip a row, because the range is taken from
+             * the anchor rather than accumulated one crossing at a time.
+             */
+            onMouseMove={(event) => {
+              if (event.buttons !== 1 || anchor.current === null) return
+
+              const under = document
+                .elementFromPoint(event.clientX, event.clientY)
+                ?.closest('[data-row]')
+              const index = Number(under?.getAttribute('data-row'))
+
+              if (Number.isInteger(index)) extendDrag(index)
+            }}
+          >
+            {load.messages.map((message, index) => {
               const isOpen =
                 reading?.messageId === message.gmailMessageId &&
                 reading.accountId === message.accountId
 
               return (
                 <li key={`${message.accountId}:${message.gmailMessageId}`}>
-                  <div className="message" data-open={isOpen}>
+                  <div
+                    className="message"
+                    data-open={isOpen}
+                    /*
+                     * The row, not the box. A drag has to follow the pointer,
+                     * and a 22px checkbox is a target a moving pointer skips
+                     * straight past — dragging down the list selected the
+                     * first two rows and stopped, because the third box was
+                     * never entered.
+                     */
+                    data-row={index}
+                  >
                     {/*
                       The checkbox and the row are separate targets. A single
                       label wrapping both would mean every attempt to open a
@@ -763,11 +1013,39 @@ export function MailView({
                       type="checkbox"
                       aria-label={`Select ${message.subject || 'message'}`}
                       checked={selected.has(message.gmailMessageId)}
-                      onChange={(event) => {
-                        const next = new Set(selected)
-                        if (event.target.checked) next.add(message.gmailMessageId)
-                        else next.delete(message.gmailMessageId)
-                        setSelected(next)
+                      /*
+                       * The browser never toggles this one; React does.
+                       *
+                       * A checkbox flips itself *before* the click handler
+                       * runs, so `preventDefault` there reverts it — and
+                       * React, seeing the same `checked` prop as last render,
+                       * has no reason to touch the DOM. The row then showed
+                       * the opposite of what the app believed, which is how
+                       * every range came out exactly one row short.
+                       *
+                       * Handling mousedown and cancelling it outright keeps
+                       * the DOM out of the argument entirely: `checked` is
+                       * whatever state says, always.
+                       */
+                      readOnly
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+
+                        if (event.shiftKey) {
+                          selectRangeTo(index)
+                          return
+                        }
+
+                        beginDrag(index)
+                        toggleOne(index)
+                      }}
+                      /* Space and Enter still work; there is no mouse there. */
+                      onKeyDown={(event) => {
+                        if (event.key !== ' ' && event.key !== 'Enter') return
+                        event.preventDefault()
+
+                        if (event.shiftKey) selectRangeTo(index)
+                        else toggleOne(index)
                       }}
                     />
 
@@ -861,6 +1139,14 @@ export function MailView({
         {!reading && analysing && (
           <AnalyticsPanel
             accounts={accounts}
+            /*
+             * The analysis follows the list it is standing next to. It always
+             * measured the whole mailbox, which is a fair default and the
+             * wrong answer to "what is in my inbox" — the two numbers sat side
+             * by side on the same screen disagreeing, and neither said why.
+             */
+            folder={mode}
+            folderLabel={TITLES[mode]}
             onClose={() => setAnalysing(false)}
             onCleaned={(message) => {
               setNotice(message)

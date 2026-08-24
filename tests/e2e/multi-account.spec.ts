@@ -169,7 +169,7 @@ test.describe('several mailboxes', () => {
      * spent a minute's Gmail quota in one go.
      */
     await expect(page.getByText('(3 shown)')).toBeVisible()
-    await page.getByRole('button', { name: /Load 500 more/ }).click()
+    await page.getByRole('button', { name: /Load 100 more/ }).click()
     await expect(page.getByText('(4 shown)')).toBeVisible()
     await expect(page.getByText('All 4 matches loaded')).toBeVisible()
 
@@ -301,7 +301,7 @@ test('a cursor that repeats itself does not duplicate the list', async ({
   await page.goto('/')
   await expect(page.getByText('(2 shown)')).toBeVisible()
 
-  await page.getByRole('button', { name: /Load 500 more/ }).click()
+  await page.getByRole('button', { name: /Load 100 more/ }).click()
 
   // Still two, and the button is gone rather than offering another lap.
   await expect(page.getByText('All 2 matches loaded')).toBeVisible()

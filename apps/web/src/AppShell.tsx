@@ -6,7 +6,9 @@ import { ComposeView } from './views/ComposeView.js'
 import { MailView } from './views/MailView.js'
 import { RulesView } from './views/RulesView.js'
 import {
+  AlertIcon,
   CloseIcon,
+  DraftIcon,
   HiveMark,
   LogoutIcon,
   MenuIcon,
@@ -22,11 +24,30 @@ import { EMPTY_FILTERS, type Filters } from './MailFilters.js'
 import { StatusScreen } from './StatusScreen.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
-export type ViewId = 'inbox' | 'sent' | 'trash' | 'compose' | 'rules' | 'accounts'
+export type ViewId =
+  | 'inbox'
+  | 'sent'
+  | 'drafts'
+  | 'spam'
+  | 'trash'
+  | 'compose'
+  | 'rules'
+  | 'accounts'
+
+/** The views that are a list of mail rather than a form or a settings page. */
+export type MailboxView = 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash'
 
 const NAV = [
   { id: 'inbox', label: 'Inbox', Icon: MailIcon },
   { id: 'sent', label: 'Sent', Icon: SendIcon },
+  { id: 'drafts', label: 'Drafts', Icon: DraftIcon },
+  /*
+   * Spam has its own place rather than being folded into the inbox.
+   * Gmail already separates it, every count in this app is built on that
+   * separation, and mixing it in would make the inbox — and every analysis
+   * drawn from it — mostly a chart of spam.
+   */
+  { id: 'spam', label: 'Spam', Icon: AlertIcon },
   { id: 'trash', label: 'Trash', Icon: TrashIcon },
   { id: 'compose', label: 'Compose', Icon: SendIcon },
   { id: 'rules', label: 'Rules', Icon: ScheduleIcon },

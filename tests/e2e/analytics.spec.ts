@@ -134,7 +134,7 @@ async function stub(page: Page, analysis = ANALYSIS): Promise<Seen> {
         run: seen.analyseBodies.length
           ? {
               accountId: null,
-              query: '-in:spam',
+              query: 'in:inbox',
               filters: {},
               result: analysis,
               finishedAt: '2026-08-23 12:26:00',
@@ -281,7 +281,7 @@ test.describe('mailbox analysis', () => {
 
     expect(seen.analyseBodies.at(-1)).toMatchObject({
       accountId: 'acc-2',
-      query: '-in:spam older_than:1y',
+      query: 'in:inbox older_than:1y',
       scanLimit: 5000,
     })
   })
@@ -321,7 +321,7 @@ test.describe('mailbox analysis', () => {
 
     // Scoped to that sender, and excluding what is already binned.
     expect(seen.resolveBodies.at(-1)).toMatchObject({
-      query: '-in:spam from:kapil@example.test -in:trash',
+      query: 'in:inbox from:kapil@example.test -in:trash',
     })
     expect(seen.trashBodies).toHaveLength(2)
     expect(deleteForeverCalled).toBe(false)
@@ -466,10 +466,10 @@ test.describe('acting on several senders at once', () => {
      * covering all of them.
      */
     expect(seen.resolveBodies.map((body) => body.query)).toEqual([
-      '-in:spam from:kapil@example.test -in:trash',
-      '-in:spam from:kapil@example.test -in:trash',
-      '-in:spam from:noreply@shop.test -in:trash',
-      '-in:spam from:noreply@shop.test -in:trash',
+      'in:inbox from:kapil@example.test -in:trash',
+      'in:inbox from:kapil@example.test -in:trash',
+      'in:inbox from:noreply@shop.test -in:trash',
+      'in:inbox from:noreply@shop.test -in:trash',
     ])
 
     // Both rows are gone, and nothing stays ticked.
@@ -529,7 +529,7 @@ test.describe('the totals narrow the panel', () => {
      * shown said 96, so 96 is what may move.
      */
     expect(seen.resolveBodies.at(-1)).toMatchObject({
-      query: '-in:spam has:attachment from:kapil@example.test -in:trash',
+      query: 'in:inbox has:attachment from:kapil@example.test -in:trash',
     })
   })
 })
@@ -715,4 +715,66 @@ test.describe('narrowing to one mailbox', () => {
     expect(seen.resolveBodies).toHaveLength(1)
     expect(seen.resolveBodies.at(-1)).toMatchObject({ accountId: 'acc-2' })
   })
+})
+
+/*
+ * Reported: the inbox said 8,361 and the analysis beside it said 10,605, with
+ * nothing on screen to explain the gap. Neither number was wrong — one was
+ * `in:inbox`, the other the whole mailbox — but two totals disagreeing side by
+ * side is a bug regardless of which is correct.
+ */
+test.describe('the analysis follows the list it sits beside', () => {
+  test('measures the folder on screen, and says which', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+
+    await expect(panel.getByText('Measuring Inbox')).toBeVisible()
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    expect(seen.analyseBodies.at(-1)).toMatchObject({ query: 'in:inbox' })
+  })
+
+  test('follows the nav to another folder', async ({ page }) => {
+    const seen = await stub(page)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Sent', exact: true }).click()
+    await page.getByRole('button', { name: 'Analyse mailbox' }).click()
+
+    const panel = page.getByRole('complementary', { name: 'Mailbox analysis' })
+    await expect(panel.getByText('Measuring Sent')).toBeVisible()
+
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    expect(seen.analyseBodies.at(-1)).toMatchObject({ query: 'in:sent' })
+  })
+
+  test('can still be widened to the whole mailbox', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+
+    await panel.getByRole('button', { name: 'Whole mailbox' }).click()
+    await expect(panel.getByText('Measuring the whole mailbox')).toBeVisible()
+
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    expect(seen.analyseBodies.at(-1)).toMatchObject({ query: '-in:spam' })
+  })
+})
+
+/*
+ * Two hundred senders is a lot to read. Narrowing them is typing, not another
+ * few minutes of Gmail quota to answer a question the last run already covered.
+ */
+test('a sender search filters the results already in hand', async ({ page }) => {
+  const seen = await stub(page)
+  const panel = await openPanel(page)
+  await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+  await expect(panel.getByText('Kapil Gupta')).toBeVisible()
+
+  const before = seen.analyseBodies.length
+  await panel.getByPlaceholder('Find a sender in these results').fill('shop')
+
+  await expect(panel.getByText('noreply@shop.test')).toBeVisible()
+  await expect(panel.getByText('Kapil Gupta')).toBeHidden()
+
+  // Nothing was re-run to answer it.
+  expect(seen.analyseBodies).toHaveLength(before)
 })

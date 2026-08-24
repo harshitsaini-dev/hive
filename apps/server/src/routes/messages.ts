@@ -158,7 +158,7 @@ const MAX_PAGE_SIZE = 500
  * one's clothes — so any query with text in it goes to Gmail, every time.
  */
 const structuredSchema = z.object({
-  folder: z.enum(['inbox', 'sent', 'trash', 'all']),
+  folder: z.enum(['inbox', 'sent', 'drafts', 'spam', 'trash', 'all']),
   from: z.string().max(200).optional(),
   after: z.string().max(20).optional(),
   before: z.string().max(20).optional(),

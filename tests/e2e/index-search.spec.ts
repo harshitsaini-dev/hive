@@ -76,7 +76,7 @@ async function stub(page: Page): Promise<Seen> {
           ? {
               source: 'index',
               total: 1_323,
-              nextOffset: 500,
+              nextOffset: 100,
               nextPageToken: null,
               messages,
               accounts: [],
@@ -194,8 +194,8 @@ test.describe('index-served search', () => {
      */
     await expect(page.getByText(/Showing .* of 1,323 matches/)).toBeVisible()
 
-    await page.getByRole('button', { name: /Load 500 more/ }).click()
-    await expect.poll(() => last(seen).get('offset')).toBe('500')
+    await page.getByRole('button', { name: /Load 100 more/ }).click()
+    await expect.poll(() => last(seen).get('offset')).toBe('100')
     expect(last(seen).get('pageToken')).toBeNull()
   })
 })

@@ -6,6 +6,7 @@ import {
   type MailboxAnalysis,
   type SenderTally,
 } from './api.js'
+import type { MailboxView } from './AppShell.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { DatePicker } from './DatePicker.js'
 import {
@@ -13,6 +14,7 @@ import {
   ChartIcon,
   MailIcon,
   PaperclipIcon,
+  SearchIcon,
   TrashIcon,
 } from './Icons.js'
 import { Select } from './Select.js'
@@ -51,6 +53,18 @@ const SCAN_DEPTHS = [
   { value: '20000', label: 'Newest 20,000' },
   { value: '250000', label: 'Everything' },
 ] as const
+
+/*
+ * Drafts and Spam are exactly themselves; everything else is the folder plus
+ * `-in:spam`, so an inbox analysis is not quietly a chart of spam.
+ */
+const FOLDER_QUERY: Record<MailboxView, string> = {
+  inbox: 'in:inbox',
+  sent: 'in:sent',
+  drafts: 'in:drafts',
+  spam: 'in:spam',
+  trash: 'in:trash',
+}
 
 const AGES = [
   { value: '', label: 'Any age' },
@@ -98,11 +112,16 @@ function formatWhen(iso: string): string {
 
 export function AnalyticsPanel({
   accounts,
+  folder,
+  folderLabel,
   onClose,
   onCleaned,
   onView,
 }: {
   accounts: ConnectedAccount[]
+  /** The list this panel is standing beside. */
+  folder: MailboxView
+  folderLabel: string
   onClose: () => void
   /** The list behind this is now stale; ask it to refresh. */
   onCleaned: (message: string) => void
@@ -142,6 +161,15 @@ export function AnalyticsPanel({
   const [onlyWith, setOnlyWith] = useState<'all' | 'with' | 'without'>('all')
   /** Which mailbox the panel is narrowed to, or '' for all of them. */
   const [onlyAccount, setOnlyAccount] = useState('')
+  /** Widened past the folder on screen, when someone asks for the lot. */
+  const [wholeMailbox, setWholeMailbox] = useState(false)
+  /** Narrows the sender list by name or address, without another run. */
+  const [senderFilter, setSenderFilter] = useState('')
+  /** How far a clear has got, so a slow one does not look like a hung one. */
+  const [clearing, setClearing] = useState<{
+    done: number
+    total: number
+  } | null>(null)
   /** Senders ticked for a bulk view or clear, by address. */
   const [selected, setSelected] = useState<Set<string>>(new Set())
   /**
@@ -205,7 +233,15 @@ export function AnalyticsPanel({
    * chart of spam.
    */
   function buildQuery(): string {
-    const parts = ['-in:spam']
+    /*
+     * Scoped to the folder being looked at, unless asked to widen.
+     *
+     * It was always `-in:spam` — the whole mailbox — which put "10,605
+     * messages match" next to an inbox that said 8,361 and left the two
+     * disagreeing on screen with nothing to explain the gap. They were
+     * answering different questions; now they answer the same one by default.
+     */
+    const parts = [wholeMailbox ? '-in:spam' : FOLDER_QUERY[folder]]
     if (olderThan) parts.push(`older_than:${olderThan}`)
     if (after) parts.push(`after:${after.replace(/-/g, '/')}`)
     if (before) parts.push(`before:${nextDay(before)}`)
@@ -333,12 +369,33 @@ export function AnalyticsPanel({
       ? accounts.filter((account) => account.id === scopeId)
       : accounts
 
+    /*
+     * Progress, because this is slow and looked broken.
+     *
+     * Clearing a sender resolves the query and then trashes in batches, one
+     * account at a time — seconds for a handful, well over a minute for
+     * thousands. All of that happened behind a button that said "Clearing…"
+     * and nothing else, so the honest reading from the other side of the
+     * screen was that the app had hung.
+     *
+     * The unit is a *step*, not a message: one resolve plus one trash per
+     * query per account. Messages would be the more natural unit and the
+     * count is not known until each resolve comes back, so a bar measured in
+     * them would jump around and finish before the work did.
+     */
+    const totalSteps = target.queries.length * accountsToClear.length
+    let step = 0
+    setClearing({ done: 0, total: totalSteps })
+
     try {
       let trashed = 0
 
       for (const query of target.queries) {
         for (const account of accountsToClear) {
           const resolved = await api.resolveQuery(account.id, query)
+          step += 1
+          setClearing({ done: step, total: totalSteps })
+
           if (resolved.messageIds.length === 0) continue
 
           await api.trashMessages(
@@ -385,6 +442,7 @@ export function AnalyticsPanel({
       )
     } finally {
       setCleaning(null)
+      setClearing(null)
     }
   }
 
@@ -433,6 +491,14 @@ export function AnalyticsPanel({
       }
     })
     .filter((sender) => sender.count > 0)
+    .filter((sender) => {
+      const needle = senderFilter.trim().toLowerCase()
+      if (!needle) return true
+      return (
+        sender.address.toLowerCase().includes(needle) ||
+        sender.name.toLowerCase().includes(needle)
+      )
+    })
     .sort((a, b) => b.count - a.count)
 
   /*
@@ -528,6 +594,26 @@ export function AnalyticsPanel({
           />
         </div>
 
+        {/*
+          Said out loud, because the number below depends on it and a total
+          that silently means something other than the list beside it is how
+          this confused someone in the first place.
+        */}
+        <div className="analytics__scope">
+          <span className="hint">
+            {wholeMailbox
+              ? 'Measuring the whole mailbox'
+              : `Measuring ${folderLabel}`}
+          </span>
+          <button
+            type="button"
+            className="btn-quiet"
+            onClick={() => setWholeMailbox(!wholeMailbox)}
+          >
+            {wholeMailbox ? `Just ${folderLabel}` : 'Whole mailbox'}
+          </button>
+        </div>
+
         <Select
           label="How deep to read senders"
           className="analytics__field"
@@ -548,6 +634,31 @@ export function AnalyticsPanel({
       </div>
 
       <div role="status" aria-live="polite">
+        {clearing && (
+          <div className="progress analytics__progress">
+            <div className="progress__label">
+              <span>Moving to Trash…</span>
+              <span>
+                {clearing.done} of {clearing.total}
+              </span>
+            </div>
+            <div
+              className="progress__track"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={clearing.total}
+              aria-valuenow={clearing.done}
+            >
+              <div
+                className="progress__bar"
+                style={{
+                  width: `${percent(clearing.done, Math.max(clearing.total, 1))}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {running && progress && (
           <div className="progress analytics__progress">
             <div className="progress__label">
@@ -743,6 +854,25 @@ export function AnalyticsPanel({
                 of waiting — and the reason to rank senders at all is that the
                 junk arrives in clumps.
               */}
+              {/*
+                Filtering, not re-running. The senders are already in hand, so
+                narrowing them is typing — not another few minutes of Gmail
+                quota to answer a question the last run already covered.
+              */}
+              <div className="search-field analytics__find">
+                <SearchIcon size={15} />
+                <label htmlFor="sender-search" className="sr-only">
+                  Find a sender
+                </label>
+                <input
+                  id="sender-search"
+                  type="search"
+                  value={senderFilter}
+                  placeholder="Find a sender in these results"
+                  onChange={(event) => setSenderFilter(event.target.value)}
+                />
+              </div>
+
               <div className="analytics__selectbar">
                 <label className="checkline">
                   <input

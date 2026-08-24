@@ -3731,3 +3731,35 @@ a.link-plain {
   flex: 1 1 12rem;
   font-size: 0.78rem;
 }
+
+.analytics__scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.analytics__find {
+  width: 100%;
+}
+
+/* The selection shortcuts. Hidden on a phone, where none of them exist. */
+.selectbar__hint {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 48rem) {
+  .selectbar__hint {
+    display: none;
+  }
+}
+
+/* A drag across the boxes should select, not smear a text selection behind it. */
+.messages {
+  user-select: none;
+}
+
+.message__open {
+  user-select: text;
+}

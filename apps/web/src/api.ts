@@ -63,7 +63,7 @@ export interface MessageRow {
  * not hold them, so a text query always goes to Gmail.
  */
 export interface StructuredSearch {
-  folder: 'inbox' | 'sent' | 'trash' | 'all'
+  folder: 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash' | 'all'
   from?: string
   after?: string
   before?: string

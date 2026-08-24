@@ -296,8 +296,9 @@ export async function updateSyncState(
  */
 export interface IndexQuery {
   accountId: string
-  /** 'inbox' | 'sent' | 'trash' | 'all' — 'all' still excludes spam. */
-  folder: 'inbox' | 'sent' | 'trash' | 'all'
+  /** 'all' means everything outside Spam, Trash and Drafts, as Gmail's own
+   *  search does. The named folders are exactly themselves. */
+  folder: 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash' | 'all'
   from?: string
   /** Inclusive, `YYYY-MM-DD`. */
   after?: string
@@ -335,13 +336,25 @@ function buildWhere(query: IndexQuery): {
   const clauses = ['account_id = ?']
   const args: (string | number)[] = [query.accountId]
 
-  if (query.folder === 'trash') {
-    clauses.push(`labels_json LIKE '%"TRASH"%'`)
+  /*
+   * Trash, Spam and Drafts are each exactly themselves. Everything else is
+   * "outside those three", which is the default a search gets in Gmail — an
+   * unsent draft and a message Gmail already judged are answers to a
+   * different question than "where is that email".
+   */
+  const PINNED: Record<string, string> = {
+    trash: 'TRASH',
+    spam: 'SPAM',
+    drafts: 'DRAFT',
+  }
+
+  const pinned = PINNED[query.folder]
+  if (pinned) {
+    clauses.push(`labels_json LIKE '%"${pinned}"%'`)
   } else {
-    // Everything outside the bin, plus spam excluded — the default a search
-    // gets in Gmail itself.
     clauses.push(`labels_json NOT LIKE '%"TRASH"%'`)
     clauses.push(`labels_json NOT LIKE '%"SPAM"%'`)
+    clauses.push(`labels_json NOT LIKE '%"DRAFT"%'`)
 
     if (query.folder === 'inbox') clauses.push(`labels_json LIKE '%"INBOX"%'`)
     if (query.folder === 'sent') clauses.push(`labels_json LIKE '%"SENT"%'`)

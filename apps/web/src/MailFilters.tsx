@@ -119,7 +119,7 @@ const OLDER_DAYS: Record<string, number> = {
  */
 export function toStructured(
   filters: Filters,
-  folder: 'inbox' | 'sent' | 'trash' | 'all',
+  folder: 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash' | 'all',
 ): StructuredSearch | null {
   if (filters.text.trim() || filters.raw.trim()) return null
 
