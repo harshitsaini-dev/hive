@@ -27,7 +27,27 @@ const ACCOUNT = {
   lastSyncedAt: null,
 }
 
-async function stub(page: Page) {
+interface Seen {
+  resolved: number
+}
+
+async function stub(page: Page): Promise<Seen> {
+  const seen: Seen = { resolved: 0 }
+
+  await page.route('**/api/messages/resolve-query', (route) => {
+    seen.resolved += 1
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        messageIds: Array.from({ length: 137 }, (_, n) => `all-${n}`),
+        count: 137,
+        truncated: false,
+        limit: 10_000,
+      }),
+    })
+  })
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -64,6 +84,8 @@ async function stub(page: Page) {
       }),
     }),
   )
+
+  return seen
 }
 
 const boxes = (page: Page) => page.locator('.message input[type="checkbox"]')
@@ -138,13 +160,27 @@ test.describe('selecting a run of messages', () => {
     expect(await checkedCount(page)).toBe(3)
   })
 
-  test('Ctrl+A takes the page, and again gives it back', async ({ page }) => {
-    await stub(page)
+  /*
+   * Three states, not two. Pressing it twice used to clear the selection,
+   * which is a strange thing to ask for twice — the second press obviously
+   * means "no, all of it", the way it does in a file manager showing a folder
+   * that is only partly loaded.
+   */
+  test('Ctrl+A takes the page, then everything, then nothing', async ({
+    page,
+  }) => {
+    const seen = await stub(page)
     await page.goto('/')
-
     await page.locator('.messages').click({ position: { x: 2, y: 2 } })
+
     await page.keyboard.press('Control+a')
     expect(await checkedCount(page)).toBe(6)
+
+    // The second press reaches past the page, to everything the search
+    // matches — which the server has to resolve, because the page cannot know.
+    await page.keyboard.press('Control+a')
+    await expect(page.getByText(/everything matching this search/)).toBeVisible()
+    expect(seen.resolved).toBeGreaterThan(0)
 
     await page.keyboard.press('Control+a')
     expect(await checkedCount(page)).toBe(0)

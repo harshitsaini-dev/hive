@@ -195,3 +195,33 @@ test.describe('spam and trash reach the server correctly', () => {
     }
   })
 })
+
+/*
+ * Reloading on Sent used to land back in the inbox. The view was in-app state
+ * and the address bar knew nothing about it, so a refresh felt like being
+ * sent home — and a link to a destination could not exist at all.
+ */
+test.describe('the address bar knows where you are', () => {
+  test('a reload comes back to the same place', async ({ page }) => {
+    await stub(page)
+    await page.goto('/')
+
+    await page.getByRole('button', { name: 'Drafts' }).click()
+    expect(new URL(page.url()).pathname).toBe('/drafts')
+
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Drafts' })).toBeVisible()
+  })
+
+  test('Back walks through where you have been', async ({ page }) => {
+    await stub(page)
+    await page.goto('/')
+
+    await page.getByRole('button', { name: 'Spam', exact: true }).click()
+    await page.getByRole('button', { name: 'Trash', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Trash' })).toBeVisible()
+
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'Spam' })).toBeVisible()
+  })
+})

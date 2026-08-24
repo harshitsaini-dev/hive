@@ -502,16 +502,35 @@ export function MailView({
       }
 
       event.preventDefault()
-      setSelected((current) =>
-        current.size === load.messages.length
-          ? new Set()
-          : new Set(load.messages.map((message) => message.gmailMessageId)),
-      )
+
+      /*
+       * Three states, not two: this page, everything the search matches, then
+       * nothing. Pressing it twice used to clear the selection, which is a
+       * strange thing to ask for twice — the second press obviously means
+       * "no, all of it", the way it does in a file manager showing a folder
+       * that is only partly loaded.
+       */
+      const wholePage =
+        load.messages.length > 0 && selected.size === load.messages.length
+
+      if (wholeQuery) {
+        setWholeQuery(null)
+        setSelected(new Set())
+        return
+      }
+
+      if (wholePage) {
+        void selectWholeQuery()
+        return
+      }
+
+      setSelected(new Set(load.messages.map((message) => message.gmailMessageId)))
     }
 
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [load.messages])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load.messages, selected, wholeQuery])
 
   const selectedRows = load.messages.filter((message) =>
     selected.has(message.gmailMessageId),

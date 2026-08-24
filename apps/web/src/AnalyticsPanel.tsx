@@ -5,6 +5,7 @@ import {
   ApiRequestError,
   type MailboxAnalysis,
   type SenderTally,
+  type StructuredSearch,
 } from './api.js'
 import type { MailboxView } from './AppShell.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
@@ -66,6 +67,14 @@ const FOLDER_QUERY: Record<MailboxView, string> = {
   trash: 'in:trash',
 }
 
+/** The age presets, in days, for the structural half of the same query. */
+const AGE_DAYS: Record<string, number> = {
+  '30d': 30,
+  '90d': 90,
+  '1y': 365,
+  '2y': 730,
+}
+
 const AGES = [
   { value: '', label: 'Any age' },
   { value: '30d', label: 'Older than a month' },
@@ -73,6 +82,15 @@ const AGES = [
   { value: '1y', label: 'Older than a year' },
   { value: '2y', label: 'Older than 2 years' },
 ] as const
+
+/** `2026-01-31` -> `2026-02-01`, keeping an inclusive end date inclusive. */
+function nextDayIso(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return isoDate
+
+  date.setUTCDate(date.getUTCDate() + 1)
+  return date.toISOString().slice(0, 10)
+}
 
 /** `2026-01-31` -> `2026/02/01`, so an inclusive end date reads as one. */
 function nextDay(isoDate: string): string {
@@ -254,6 +272,23 @@ export function AnalyticsPanel({
    * itself must always cover everything — the attachment split is one of the
    * things it goes and measures.
    */
+  /**
+   * The same scope the query describes, in the shape the index understands.
+   *
+   * Built beside `buildQuery` rather than derived from it: parsing a Gmail
+   * query back into structure would be guessing at Google's grammar, and the
+   * two halves must agree exactly or the totals and the sender list end up
+   * measuring different things.
+   */
+  function buildScope(): StructuredSearch {
+    return {
+      folder: wholeMailbox ? 'all' : folder,
+      ...(after ? { after } : {}),
+      ...(before ? { before: nextDayIso(before) } : {}),
+      ...(olderThan ? { olderThanDays: AGE_DAYS[olderThan] } : {}),
+    }
+  }
+
   function activeQuery(): string {
     const attachment =
       onlyWith === 'with'
@@ -320,6 +355,7 @@ export function AnalyticsPanel({
         query,
         scanLimit: Number(scanLimit),
         filters: { accountId, olderThan, after, before, scanLimit },
+        scope: buildScope(),
       })
 
       // The server stores the run as the job finishes, so nothing is saved

@@ -37,6 +37,18 @@ export type ViewId =
 /** The views that are a list of mail rather than a form or a settings page. */
 export type MailboxView = 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash'
 
+/**
+ * The view named by the address bar, or the inbox.
+ *
+ * Only `/accounts` used to be addressable — everything else lived in memory,
+ * so reloading anywhere else quietly returned to the inbox.
+ */
+function viewFromPath(): ViewId {
+  const path = window.location.pathname.replace(/^\//, '')
+  const known = NAV.some((item) => item.id === path)
+  return known ? (path as ViewId) : 'inbox'
+}
+
 const NAV = [
   { id: 'inbox', label: 'Inbox', Icon: MailIcon },
   { id: 'sent', label: 'Sent', Icon: SendIcon },
@@ -75,9 +87,7 @@ export function AppShell({
    * the OAuth callback lands there, and a bookmark to it should work.
    * Everything else is in-app state; only this one path is addressable.
    */
-  const [view, setView] = useState<ViewId>(() =>
-    window.location.pathname === '/accounts' ? 'accounts' : 'inbox',
-  )
+  const [view, setView] = useState<ViewId>(() => viewFromPath())
   const [navOpen, setNavOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   /** Bumped to remount MailView when the palette hands it a new search. */
@@ -138,9 +148,23 @@ export function AppShell({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  /*
+   * Back and Forward move between destinations now that they change the
+   * address. Without this the URL would change and the page would not.
+   */
+  useEffect(() => {
+    const onPop = () => setView(viewFromPath())
+
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   // Choosing a destination on mobile should close the drawer behind you.
   const go = (next: ViewId) => {
     setView(next)
+    // The address bar follows, so a refresh comes back to the same place and
+    // Back walks through where you have actually been.
+    window.history.pushState({}, '', next === 'inbox' ? '/' : `/${next}`)
     setNavOpen(false)
     /*
      * Leaving for a nav destination also leaves the palette's search behind.

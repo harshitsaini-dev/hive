@@ -778,3 +778,72 @@ test('a sender search filters the results already in hand', async ({ page }) => 
   // Nothing was re-run to answer it.
   expect(seen.analyseBodies).toHaveLength(before)
 })
+
+/*
+ * Reported from Sent: "163 messages match" beside a sender list whose first
+ * three rows added to over five thousand.
+ *
+ * The totals come from Gmail and honoured the folder; the sender rollup came
+ * from the local index and ignored the query entirely, counting the whole
+ * mailbox. Two numbers on one screen measuring different things, which is the
+ * same failure as the inbox/analysis mismatch and in a worse place — inside a
+ * single panel.
+ */
+test.describe('the totals and the sender list measure the same thing', () => {
+  test('the run carries its scope structurally, not only as a query', async ({
+    page,
+  }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    expect(seen.analyseBodies.at(-1)).toMatchObject({
+      query: 'in:inbox',
+      scope: { folder: 'inbox' },
+    })
+  })
+
+  test('every folder sends its own, drafts included', async ({ page }) => {
+    const seen = await stub(page)
+    await page.goto('/')
+
+    for (const [label, folder] of [
+      ['Sent', 'sent'],
+      ['Drafts', 'drafts'],
+      ['Spam', 'spam'],
+      ['Trash', 'trash'],
+    ] as const) {
+      await page.getByRole('button', { name: label, exact: true }).click()
+      await page.getByRole('button', { name: 'Analyse mailbox' }).click()
+
+      const panel = page.getByRole('complementary', { name: 'Mailbox analysis' })
+      // "Analyse" the first time, "Run again" once a stored run comes back.
+      await panel
+        .getByRole('button', { name: /^(Analyse|Run again)$/ })
+        .click()
+
+      expect(seen.analyseBodies.at(-1)).toMatchObject({
+        query: `in:${folder}`,
+        scope: { folder },
+      })
+
+      await panel.getByRole('button', { name: 'Close' }).click()
+    }
+  })
+
+  test('the age and date filters travel in both halves', async ({ page }) => {
+    const seen = await stub(page)
+    const panel = await openPanel(page)
+
+    await panel.getByRole('button', { name: 'Age', exact: true }).click()
+    await panel.getByRole('option', { name: 'Older than a year' }).click()
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    // The Gmail query and the index query have to agree, or the halves drift
+    // apart again in a way nothing on screen would reveal.
+    expect(seen.analyseBodies.at(-1)).toMatchObject({
+      query: 'in:inbox older_than:1y',
+      scope: { folder: 'inbox', olderThanDays: 365 },
+    })
+  })
+})

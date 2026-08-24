@@ -147,41 +147,29 @@ export interface IndexedSenderTally {
  * per message and takes half an hour on a large mailbox; here it is a grouped
  * scan of one indexed column.
  *
- * Trash and spam are excluded to match what a search shows by default — a
- * chart dominated by mail the user already threw away is not a finding.
+ * **It takes the same query as the page listing**, and that is not a tidiness
+ * point. It used to take a bare account id and quietly count the entire
+ * index: an analysis of Sent reported a total of 163 from Gmail beside a
+ * sender list adding to thousands, because the totals honoured the folder and
+ * the rollup did not. Two numbers on one screen, measuring different things,
+ * with nothing to say so.
  */
 export async function tallySendersFromIndex(
-  accountId: string,
-  options: { after?: string; before?: string; limit?: number } = {},
+  query: IndexQuery,
+  limit = 200,
 ): Promise<IndexedSenderTally[]> {
-  const clauses = [
-    'account_id = ?',
-    "labels_json NOT LIKE '%\"TRASH\"%'",
-    "labels_json NOT LIKE '%\"SPAM\"%'",
-  ]
-  const args: (string | number)[] = [accountId]
-
-  if (options.after) {
-    clauses.push('received_at >= ?')
-    args.push(options.after)
-  }
-  if (options.before) {
-    clauses.push('received_at < ?')
-    args.push(options.before)
-  }
-
-  args.push(options.limit ?? 200)
+  const where = buildWhere(query)
 
   const result = await db().execute({
     sql: `SELECT from_addr,
                  COUNT(*) AS count,
                  SUM(has_attachment) AS with_attachment
           FROM message_index
-          WHERE ${clauses.join(' AND ')}
+          WHERE ${where.sql}
           GROUP BY from_addr
           ORDER BY count DESC
           LIMIT ?`,
-    args,
+    args: [...where.args, limit],
   })
 
   return result.rows.map((row) => ({

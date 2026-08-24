@@ -321,6 +321,13 @@ export const api = {
     query: string
     scanLimit: number
     filters: Record<string, string>
+    /**
+     * The same scope structurally. The server counts totals from Gmail and
+     * rolls senders up from its index, and without this the second ignored
+     * the folder entirely — a Sent analysis showed 163 matches beside a
+     * sender list adding to thousands.
+     */
+    scope: StructuredSearch
   }) =>
     request<{ jobId: string }>('/messages/analytics', {
       method: 'POST',

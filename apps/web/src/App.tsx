@@ -15,9 +15,23 @@ type Auth =
   | { state: 'signed-in'; user: User }
   | { state: 'unreachable'; detail: string | null }
 
-/** The only paths the app serves. Anything else is a 404. */
+/**
+ * The only paths the app serves. Anything else is a 404.
+ *
+ * Every destination is addressable now, not just the two that had to be.
+ * Reloading on Sent used to land back in the inbox — the view was in-app
+ * state and the address bar knew nothing about it — which made a refresh feel
+ * like being sent home.
+ */
 const KNOWN_PATHS = new Set([
   '/',
+  '/inbox',
+  '/sent',
+  '/drafts',
+  '/spam',
+  '/trash',
+  '/compose',
+  '/rules',
   '/accounts',
   '/privacy',
   '/terms',

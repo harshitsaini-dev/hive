@@ -71,6 +71,8 @@ export interface SyncProgress {
   /** Turned off for this mailbox. What is indexed stays; nothing new is added. */
   paused: boolean
   lastSyncedAt: string | null
+  /** When the background sweep will next look at this mailbox. */
+  nextRunAt: string | null
   error: string | null
 }
 

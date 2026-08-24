@@ -667,6 +667,8 @@ const analyticsSchema = z.object({
    * itself back the way it was on another device. Opaque to the server.
    */
   filters: z.record(z.string(), z.string()).default({}),
+  /** The same scope structurally, so the index rollup matches the totals. */
+  scope: structuredSchema,
 })
 
 /**
@@ -685,7 +687,7 @@ messagesRouter.post(
     const parsed = analyticsSchema.safeParse(req.body)
     if (!parsed.success) throw badRequest('A query and scanLimit are required')
 
-    const { accountId, query, scanLimit, filters } = parsed.data
+    const { accountId, query, scanLimit, filters, scope } = parsed.data
     const user = authed(req).user
 
     // One at a time per user. Two concurrent scans would race each other for
@@ -708,6 +710,7 @@ messagesRouter.post(
           query,
           scanLimit,
           filters,
+          scope: { ...scope, accountId: '' },
           onProgress: (done, total) => {
             setJobTotal(job.id, total)
             advanceJob(job.id, done)

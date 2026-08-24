@@ -112,6 +112,7 @@ test.describe('index progress', () => {
       backfilling: true,
       paused: false,
       lastSyncedAt: null,
+      nextRunAt: new Date(Date.now() + 6 * 60_000).toISOString(),
       error: null,
     })
     await openAccounts(page)
@@ -276,4 +277,88 @@ test.describe('the name on outgoing mail', () => {
     await expect(page.getByText('Sends as first@example.test')).toBeVisible()
     await expect(page.getByRole('button', { name: /name/i })).toBeHidden()
   })
+})
+
+/*
+ * Reported: "indexing auto nahi hoti hai" — it did, hourly, which on a
+ * multi-thousand-message backfill is indistinguishable from stopped. Work
+ * that happens on its own has to say so, or "Index now" becomes a habit
+ * rather than a nudge.
+ */
+test.describe('the next check is visible', () => {
+  test('says when it will look again, without being asked', async ({ page }) => {
+    await stub(page, {
+      indexed: 400,
+      estimate: 103_412,
+      backfilling: true,
+      paused: false,
+      lastSyncedAt: null,
+      nextRunAt: new Date(Date.now() + 4 * 60_000).toISOString(),
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await expect(card.getByText(/Next check in 4 minutes/)).toBeVisible()
+  })
+
+  /*
+   * A rate limit is the case where this matters most: it is exactly when
+   * someone would otherwise sit pressing the button.
+   */
+  test('a rate-limited account says it will try again by itself', async ({
+    page,
+  }) => {
+    await stub(page, {
+      indexed: 400,
+      estimate: 103_412,
+      backfilling: true,
+      paused: false,
+      lastSyncedAt: null,
+      nextRunAt: new Date(Date.now() + 7 * 60_000).toISOString(),
+      error: 'Gmail is rate limiting this account.',
+    })
+    const card = await openIndexing(page)
+
+    await expect(card.getByText(/it will try again then/)).toBeVisible()
+  })
+
+  test('a paused account promises nothing', async ({ page }) => {
+    await stub(page, {
+      indexed: 400,
+      estimate: 103_412,
+      backfilling: true,
+      paused: true,
+      lastSyncedAt: null,
+      nextRunAt: null,
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await expect(card.getByText(/Next check/)).toBeHidden()
+  })
+})
+
+/*
+ * Reported: "Indexing — 26,829 of about 501 so far".
+ *
+ * `messages.list` returns a `resultSizeEstimate` that is not one — on a
+ * mailbox of tens of thousands it came back as the page size plus one. The
+ * real total now comes from the profile, and a figure below what is already
+ * indexed is not shown at all: one obviously wrong number destroys confidence
+ * in the two beside it.
+ */
+test('an estimate smaller than the count is not shown', async ({ page }) => {
+  await stub(page, {
+    indexed: 26_829,
+    estimate: 501,
+    backfilling: true,
+    paused: false,
+    lastSyncedAt: null,
+    nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    error: null,
+  })
+  const card = await openIndexing(page)
+
+  await expect(card.getByText('Indexing — 26,829 so far')).toBeVisible()
+  await expect(card.getByText(/of about/)).toBeHidden()
 })

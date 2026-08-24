@@ -132,7 +132,10 @@ export function AccountsView({
                         ? `Indexing stopped: ${account.sync.error}`
                         : account.sync.backfilling
                           ? `Indexing — ${account.sync.indexed.toLocaleString()}${
-                              account.sync.estimate
+                              // Suppressed when it is below what is already
+                              // indexed; Gmail's estimate is not always one.
+                              account.sync.estimate &&
+                              account.sync.estimate >= account.sync.indexed
                                 ? ` of about ${account.sync.estimate.toLocaleString()}`
                                 : ''
                             } so far`

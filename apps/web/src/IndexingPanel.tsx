@@ -17,6 +17,27 @@ import { AlertIcon, ChartIcon } from './Icons.js'
  * Hive does while nobody is watching. Accounts is for connecting and
  * disconnecting.
  */
+/**
+ * A stored timestamp, or a plain "in N minutes" when that reads better.
+ *
+ * SQLite's `datetime('now')` carries no zone marker and is UTC; an ISO string
+ * from the server already says so. Both arrive here.
+ */
+function formatWhen(iso: string): string {
+  const stamped = /Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`
+  const at = new Date(stamped.replace(' ', 'T'))
+  if (Number.isNaN(at.getTime())) return iso
+
+  const minutes = Math.round((at.getTime() - Date.now()) / 60_000)
+  if (minutes <= 0) return 'any moment'
+  if (minutes < 60) return `in ${minutes} minute${minutes === 1 ? '' : 's'}`
+
+  return `at ${at.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`
+}
+
 export function IndexingPanel({
   accounts,
   onChanged,
@@ -56,9 +77,10 @@ export function IndexingPanel({
 
       <p className="hint">
         Hive keeps a local index of who sent what, so searching and analysing
-        do not mean asking Gmail about every message one at a time. It updates
-        itself every hour. Sender, subject, date and labels only — never the
-        contents of a message.
+        do not mean asking Gmail about every message one at a time. It checks
+        every ten minutes on its own, and picks up again by itself after
+        Gmail rate-limits it — there is nothing you need to press. Sender,
+        subject, date and labels only, never the contents of a message.
       </p>
 
       {accounts.length === 0 ? (
@@ -82,7 +104,14 @@ export function IndexingPanel({
                         : done
                           ? `Indexed ${sync.indexed.toLocaleString()} messages`
                           : `Indexing — ${(sync?.indexed ?? 0).toLocaleString()}${
-                              sync?.estimate
+                              /*
+                               * Only when it is not obviously nonsense. Gmail's
+                               * own `resultSizeEstimate` once reported 501 for
+                               * a mailbox of tens of thousands, which produced
+                               * "26,829 of about 501" — a number that destroys
+                               * confidence in the two beside it.
+                               */
+                              sync?.estimate && sync.estimate >= sync.indexed
                                 ? ` of about ${sync.estimate.toLocaleString()}`
                                 : ''
                             } so far`}
@@ -90,10 +119,10 @@ export function IndexingPanel({
 
                   {/*
                     A backfill on a large mailbox is hours of work spread over
-                    hourly passes. A bar is the difference between "this is
+                    many passes. A bar is the difference between "this is
                     progressing" and "this is stuck".
                   */}
-                  {sync && !done && sync.estimate ? (
+                  {sync && !done && sync.estimate && sync.estimate >= sync.indexed ? (
                     <span className="indexing__track" aria-hidden="true">
                       <span
                         className="indexing__bar"
@@ -103,6 +132,17 @@ export function IndexingPanel({
                       />
                     </span>
                   ) : null}
+                  {/*
+                    Said out loud, because work that happens on its own is
+                    indistinguishable from work that has stopped — which is
+                    what turned "Index now" from a nudge into a habit.
+                  */}
+                  {sync?.nextRunAt && !sync.paused && (
+                    <span className="hint indexing__next">
+                      Next check {formatWhen(sync.nextRunAt)}
+                      {sync.error ? ' — it will try again then' : ''}
+                    </span>
+                  )}
                 </div>
 
                 <div className="indexing__actions">
@@ -142,8 +182,8 @@ export function IndexingPanel({
       */}
       <p className="hint indexing__note">
         <AlertIcon size={14} />
-        The first pass over a large mailbox takes several hours, spread across
-        hourly runs so it never monopolises the connection. Everything after
+        The first pass over a large mailbox takes a while, spread across many
+        short runs so it never monopolises the connection. Everything after
         that is only what changed.
       </p>
 

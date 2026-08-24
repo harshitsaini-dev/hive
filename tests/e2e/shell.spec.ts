@@ -125,10 +125,16 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Accounts', level: 1 })).toBeVisible()
     await expect(page.getByText(/No accounts yet/)).toBeVisible()
 
-    // The session survives a reload — this is what proves the cookie is set
-    // properly rather than the state living only in React.
+    /*
+     * The session survives a reload — this is what proves the cookie is set
+     * properly rather than the state living only in React — and so does the
+     * destination. This used to expect the connect prompt, because reloading
+     * anywhere returned to the inbox; that was the bug, not the behaviour.
+     */
     await page.reload()
-    await expect(page.getByText(/Connect a mailbox first/)).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Accounts', level: 1 }),
+    ).toBeVisible()
 
     await page.getByRole('button', { name: 'Sign out' }).click()
     await expect(

@@ -22,6 +22,7 @@ import {
   listAccountsForOwner,
   saveAnalysisRun,
   tallySendersFromIndex,
+  type IndexQuery,
 } from '@hive/db'
 import { fetchMessagesMetadata, listAllMessageIds } from '@hive/gmail-client'
 import { withGmail } from './gmail.js'
@@ -96,10 +97,20 @@ export async function runAnalysis(options: {
   scanLimit: number
   /** The UI control values behind the query. Opaque here; stored verbatim. */
   filters: Record<string, string>
+  /**
+   * The same scope, in the shape the index can query.
+   *
+   * Required rather than optional: the rollup used to take a bare account id
+   * and count the whole index, so an analysis of Sent showed a total of 163
+   * beside a sender list adding to thousands. Making the caller state the
+   * scope is what stops the two halves measuring different things.
+   */
+  scope: IndexQuery
   /** Reports how many headers have been read, and how many there are to read. */
   onProgress?: (done: number, total: number) => void
 }): Promise<MailboxAnalysis> {
-  const { userId, accountId, query, scanLimit, filters, onProgress } = options
+  const { userId, accountId, query, scanLimit, filters, scope, onProgress } =
+    options
 
   const accounts = (await listAccountsForOwner(userId)).filter(
     (account) => !accountId || account.id === accountId,
@@ -150,10 +161,21 @@ export async function runAnalysis(options: {
        * nothing is being sampled.
        */
       const state = await getSyncState(account.id)
-      if (state?.backfill_done === 1) {
-        const rows = await tallySendersFromIndex(account.id, {
-          limit: 500,
-        })
+
+      /*
+       * Spam and Trash only from an index built with them. Gmail withholds
+       * both unless asked, and for a long time the backfill did not — so an
+       * older index holds everything except those two while looking complete.
+       */
+      const folderMissing =
+        (scope.folder === 'spam' || scope.folder === 'trash') &&
+        state?.covers_spam_trash !== 1
+
+      if (state?.backfill_done === 1 && !folderMissing) {
+        const rows = await tallySendersFromIndex(
+          { ...scope, accountId: account.id },
+          500,
+        )
 
         for (const row of rows) {
           const { name, address } = splitFrom(row.from_addr)

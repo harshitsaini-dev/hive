@@ -184,6 +184,26 @@ async function backfill(
   let indexed = 0
   let done = false
 
+  /*
+   * The size of the mailbox, from the profile rather than from the listing.
+   *
+   * `messages.list` returns a `resultSizeEstimate` and it is not one: on a
+   * mailbox of tens of thousands it came back as **501** — the page size plus
+   * one — so the progress line read "26,829 of about 501". `messagesTotal` on
+   * the profile is the real count, and it costs a single call.
+   */
+  if (!token) {
+    try {
+      const profile = await getProfile(accessToken)
+      await updateSyncState(accountId, {
+        totalEstimate: profile.messagesTotal || null,
+      })
+    } catch (error) {
+      // A missing total is a missing progress bar, not a failed backfill.
+      console.warn(`could not read the mailbox size for ${accountId}:`, error)
+    }
+  }
+
   while (indexed < PER_PASS) {
     const page = await listMessages(accessToken, {
       /*
@@ -219,16 +239,6 @@ async function backfill(
       indexed += metadata.length
     }
 
-    /*
-     * The estimate is Gmail's, and it is an estimate — worth showing as
-     * progress and not worth treating as a total. Only recorded on the first
-     * page, where it describes the whole mailbox rather than the tail.
-     */
-    if (!token && !pageToken && page.resultSizeEstimate) {
-      await updateSyncState(accountId, {
-        totalEstimate: page.resultSizeEstimate,
-      })
-    }
 
     pageToken = page.nextPageToken
     if (!pageToken) {

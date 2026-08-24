@@ -76,6 +76,27 @@ export async function runRule(
 let task: ScheduledTask | undefined
 let syncTask: ScheduledTask | undefined
 
+/**
+ * How often the index sweep runs, and the one place that answer lives.
+ *
+ * Exported because the Accounts view says when the next pass is due, and a UI
+ * that guesses the schedule is a UI that goes quietly wrong the day the
+ * schedule changes.
+ */
+export const SYNC_CRON = '*/10 * * * *'
+export const SYNC_INTERVAL_MINUTES = 10
+
+/** When the next sweep is due, in ISO form, for anything that reports it. */
+export function nextSyncAt(now = new Date()): string {
+  const next = new Date(now)
+  next.setSeconds(0, 0)
+  next.setMinutes(
+    (Math.floor(now.getMinutes() / SYNC_INTERVAL_MINUTES) + 1) *
+      SYNC_INTERVAL_MINUTES,
+  )
+  return next.toISOString()
+}
+
 /** Stored by this server, but parsed defensively: an older shape is not a crash. */
 function safeFilters(json: string): Record<string, string> {
   try {
@@ -131,8 +152,14 @@ export function startRuleScheduler(): void {
    * a mailbox is done: a hundred-thousand-message backfill is hours of work,
    * and finishing one account before starting the next would leave every
    * other mailbox cold for those hours.
+   *
+   * Every ten minutes, not hourly. Hourly made a backfill feel stalled — six
+   * times fewer passes for the same mailbox — and it meant a pass lost to a
+   * rate limit cost a full hour before anything tried again, which is what
+   * made "Index now" feel compulsory. An incremental pass is one history
+   * call, so the quiet case costs almost nothing to repeat.
    */
-  syncTask = cron.schedule('15 * * * *', () => {
+  syncTask = cron.schedule(SYNC_CRON, () => {
     void (async () => {
       let accounts
       try {

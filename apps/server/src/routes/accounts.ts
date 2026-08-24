@@ -22,6 +22,7 @@ import { config } from '../config.js'
 import { decrypt, encrypt, randomToken, safeEqual } from '../crypto.js'
 import { asyncRoute, badRequest, notFound } from '../errors.js'
 import { authed, requireAuth } from '../middleware/auth.js'
+import { nextSyncAt } from '../rules-runner.js'
 import { syncAccount } from '../sync.js'
 
 export const accountsRouter: Router = Router()
@@ -85,6 +86,13 @@ accountsRouter.get(
             estimate: state?.total_estimate ?? null,
             backfilling: state ? state.backfill_done === 0 : true,
             paused: state?.paused === 1,
+            /*
+             * When the sweep will next look at this account. Said out loud
+             * because indexing that happens on its own is indistinguishable
+             * from indexing that has stopped, and the difference is the whole
+             * reason "Index now" existed as a habit rather than a nudge.
+             */
+            nextRunAt: state?.paused === 1 ? null : nextSyncAt(),
             lastSyncedAt: state?.last_synced_at ?? null,
             error: state?.last_error ?? null,
           },
