@@ -103,13 +103,28 @@ export interface MessageListPage {
  */
 export async function listMessages(
   accessToken: string,
-  options: { query?: string; pageToken?: string; maxResults?: number } = {},
+  options: {
+    query?: string
+    pageToken?: string
+    maxResults?: number
+    /**
+     * Whether Spam and Trash may appear in the results.
+     *
+     * Gmail's default is **false**, and it applies even when the query asks
+     * for them by name: `q=in:spam` with this off returns nothing at all.
+     * That is not a filter refining a result set, it is a gate in front of it
+     * — which is how the Spam view came to show "Nothing in Spam" beside a
+     * Gmail tab listing nine messages.
+     */
+    includeSpamTrash?: boolean
+  } = {},
 ): Promise<MessageListPage> {
   const params = new URLSearchParams({
     maxResults: String(options.maxResults ?? 100),
   })
   if (options.query) params.set('q', options.query)
   if (options.pageToken) params.set('pageToken', options.pageToken)
+  if (options.includeSpamTrash) params.set('includeSpamTrash', 'true')
 
   const page = await gmailJson<MessageListPage>(
     accessToken,
@@ -128,6 +143,19 @@ export async function listMessages(
  * result set could page through a hundred thousand messages, and the caller
  * should always have decided what is reasonable first.
  */
+/**
+ * Whether a query is asking for Spam or Trash by name.
+ *
+ * Gmail gates those two behind `includeSpamTrash` regardless of what the
+ * query says, so `in:trash` without the flag returns nothing — a silent empty
+ * result rather than an error. Derived from the query rather than passed in,
+ * so no caller can build a query for a folder and forget the switch that
+ * makes it work.
+ */
+export function needsSpamTrash(query: string | undefined): boolean {
+  return /in:(spam|trash|anywhere)/i.test(query ?? '')
+}
+
 export async function listAllMessageIds(
   accessToken: string,
   query: string,
@@ -141,6 +169,7 @@ export async function listAllMessageIds(
       query,
       pageToken,
       maxResults: Math.min(500, limit - ids.length),
+      includeSpamTrash: needsSpamTrash(query),
     })
 
     for (const message of page.messages) {

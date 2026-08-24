@@ -35,6 +35,8 @@ export interface SyncStateRow {
   last_error: string | null
   last_synced_at: string | null
   paused: number
+  /** Whether the backfill that built this index included Spam and Trash. */
+  covers_spam_trash: number
   updated_at: string
 }
 
@@ -232,6 +234,7 @@ export async function updateSyncState(
     indexedCount?: number
     totalEstimate?: number | null
     lastError?: string | null
+    coversSpamTrash?: boolean
     paused?: boolean
     touchSynced?: boolean
   },
@@ -267,6 +270,10 @@ export async function updateSyncState(
   if (patch.lastError !== undefined) {
     sets.push('last_error = ?')
     args.push(patch.lastError)
+  }
+  if (patch.coversSpamTrash !== undefined) {
+    sets.push('covers_spam_trash = ?')
+    args.push(patch.coversSpamTrash ? 1 : 0)
   }
   if (patch.paused !== undefined) {
     sets.push('paused = ?')

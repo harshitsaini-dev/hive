@@ -186,10 +186,17 @@ async function backfill(
 
   while (indexed < PER_PASS) {
     const page = await listMessages(accessToken, {
-      // No query: the index covers the whole mailbox, trash and all, because
-      // the views built on it need to be able to exclude things themselves.
+      /*
+       * No query, and Spam and Trash included.
+       *
+       * Both halves matter. The index is meant to be the whole mailbox so the
+       * views built on it can exclude what they like — but Gmail's default is
+       * to withhold those two folders, so for a long time the index quietly
+       * held everything else and the Spam view read from it and found nothing.
+       */
       pageToken,
       maxResults: PAGE,
+      includeSpamTrash: true,
     })
 
     const ids = page.messages.map((ref) => ref.id)
@@ -252,6 +259,8 @@ async function backfill(
     await updateSyncState(accountId, {
       backfillDone: true,
       backfillToken: null,
+      // This pass asked for them, so the index genuinely holds them now.
+      coversSpamTrash: true,
       indexedCount: await countIndexed(accountId),
     })
 
@@ -298,6 +307,8 @@ async function markAttachments(
       query: 'has:attachment',
       pageToken,
       maxResults: PAGE,
+      // The index covers Spam and Trash, so their attachments count too.
+      includeSpamTrash: true,
     })
 
     await markHasAttachment(

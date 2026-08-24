@@ -8,6 +8,7 @@ import {
   getIndexedByIds,
   moveIndexedLabels,
   listAccountsForOwner,
+  listSyncStates,
   searchIndex,
   writeAuditEntry,
   type AccountRow,
@@ -22,6 +23,7 @@ import {
   getMessageFull,
   listAllMessageIds,
   listMessages,
+  needsSpamTrash,
   permanentlyDeleteMessages,
   RateLimitedError,
   ScopeNotGrantedError,
@@ -317,6 +319,25 @@ async function searchFromIndex(
   wanted: IndexQueryShape,
   page: { limit: number; offset: number },
 ) {
+  /*
+   * Spam and Trash only from an index that was built with them.
+   *
+   * Gmail withholds those two folders unless asked, and for a long time the
+   * backfill did not ask — so an index built before that fix holds everything
+   * *except* them while looking complete. An account with no spam and an
+   * account whose spam was never fetched are indistinguishable from the rows,
+   * so the flag is the only honest answer, and without it the search goes to
+   * Gmail like it always did.
+   */
+  if (wanted.folder === 'spam' || wanted.folder === 'trash') {
+    const states = await listSyncStates(accounts.map((account) => account.id))
+    const covered =
+      states.length === accounts.length &&
+      states.every((state) => state.covers_spam_trash === 1)
+
+    if (!covered) return null
+  }
+
   const fresh = await Promise.all(
     accounts.map((account) => freshenIndex(ownerId, account)),
   )
@@ -462,6 +483,7 @@ messagesRouter.get(
               query: q,
               pageToken: cursors[account.id],
               maxResults: pageSize,
+              includeSpamTrash: needsSpamTrash(q),
             })
 
             const ids = page.messages.map((ref) => ref.id)

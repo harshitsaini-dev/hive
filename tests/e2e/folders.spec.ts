@@ -124,3 +124,74 @@ test.describe('drafts and spam', () => {
     await expect(page.getByRole('button', { name: /forever/ })).toBeVisible()
   })
 })
+
+/*
+ * Reported: Hive's Spam view said "Nothing in Spam" beside a Gmail tab
+ * listing nine messages.
+ *
+ * Gmail's `messages.list` withholds Spam and Trash unless `includeSpamTrash`
+ * is set — a gate in front of the results, not a filter on them, and it
+ * applies even when the query names the folder. `q=in:spam` without it
+ * returns nothing at all, which is indistinguishable from an empty folder.
+ */
+test.describe('spam and trash reach the server correctly', () => {
+  test('the request asks for the folder Gmail hides by default', async ({
+    page,
+  }) => {
+    const asked: string[] = []
+
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'u1', email: 'tester@example.test' },
+        }),
+      }),
+    )
+    await page.route('**/api/accounts', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accounts: [ACCOUNT] }),
+      }),
+    )
+    await page.route('**/api/messages?**', (route) => {
+      const params = new URL(route.request().url()).searchParams
+      asked.push(
+        JSON.stringify({
+          q: params.get('q'),
+          folder: JSON.parse(params.get('structured') ?? 'null')?.folder,
+        }),
+      )
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: [],
+          nextPageToken: null,
+          accounts: [],
+          skipped: [],
+        }),
+      })
+    })
+
+    await page.goto('/')
+
+    for (const [label, folder] of [
+      ['Spam', 'spam'],
+      ['Trash', 'trash'],
+    ] as const) {
+      await page.getByRole('button', { name: label, exact: true }).click()
+
+      /*
+       * Both halves travel: the Gmail query names the folder, and the
+       * structured filter does too — the server needs the second to decide
+       * whether its own index may answer at all.
+       */
+      await expect
+        .poll(() => JSON.parse(asked.at(-1) ?? '{}'))
+        .toEqual({ q: `in:${folder}`, folder })
+    }
+  })
+})
