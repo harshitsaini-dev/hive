@@ -96,9 +96,10 @@ export function IndexingPanel({
       <p className="hint">
         Hive keeps a local index of who sent what, so searching and analysing
         do not mean asking Gmail about every message one at a time. It checks
-        every ten minutes on its own, and picks up again by itself after
-        Gmail rate-limits it — there is nothing you need to press. Sender,
-        subject, date and labels only, never the contents of a message.
+        every ten minutes on its own, picks up again by itself after Gmail
+        rate-limits it, and rebuilds itself if it ever drifts out of step with
+        the mailbox — there is nothing you need to press. Sender, subject,
+        date and labels only, never the contents of a message.
       </p>
 
       {accounts.length === 0 ? (
@@ -166,7 +167,8 @@ export function IndexingPanel({
                     <span className="hint indexing__stale">
                       <AlertIcon size={13} />
                       This index is out of date — it holds more than the
-                      mailbox does. Rebuild it to drop what has been deleted.
+                      mailbox does. Hive rebuilds it on its own within a few
+                      hours; the button does it now.
                     </span>
                   )}
 

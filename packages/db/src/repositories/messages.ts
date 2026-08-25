@@ -37,6 +37,8 @@ export interface SyncStateRow {
   paused: number
   /** Whether the backfill that built this index included Spam and Trash. */
   covers_spam_trash: number
+  /** When this index was last thrown away and rebuilt, by anyone. */
+  last_rebuild_at: string | null
   updated_at: string
 }
 
@@ -223,6 +225,7 @@ export async function updateSyncState(
     totalEstimate?: number | null
     lastError?: string | null
     coversSpamTrash?: boolean
+    touchRebuilt?: boolean
     paused?: boolean
     touchSynced?: boolean
   },
@@ -267,6 +270,7 @@ export async function updateSyncState(
     sets.push('paused = ?')
     args.push(patch.paused ? 1 : 0)
   }
+  if (patch.touchRebuilt) sets.push("last_rebuild_at = datetime('now')")
   if (patch.touchSynced) sets.push("last_synced_at = datetime('now')")
 
   sets.push("updated_at = datetime('now')")
@@ -556,5 +560,6 @@ export async function resetIndex(accountId: string): Promise<void> {
     indexedCount: 0,
     coversSpamTrash: false,
     lastError: null,
+    touchRebuilt: true,
   })
 }

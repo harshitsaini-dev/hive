@@ -33,6 +33,7 @@ import {
   deleteIndexedMessages,
   getSyncState,
   markHasAttachment,
+  resetIndex,
   updateSyncState,
   upsertMessages,
   type AccountRow,
@@ -73,6 +74,44 @@ export interface SyncOutcome {
  * is what lets a scheduled sweep spread the work across every account instead
  * of finishing one and leaving the rest cold.
  */
+/**
+ * How stale an index has to look before it repairs itself, and how rarely.
+ *
+ * A rebuild reads the whole mailbox again — real Gmail quota, and degraded
+ * search until it finishes — so this is a check on a timer rather than a
+ * rebuild on a timer. Unconditionally rebuilding every few hours would cost
+ * more than the drift it fixes.
+ *
+ * The tenth of slack is because the two numbers are taken at different
+ * moments and Gmail counts drafts and chats in its own total; the six hours
+ * is what stops a wrong guess doing this over and over.
+ */
+const DRIFT_RATIO = 1.1
+const REBUILD_EVERY_MS = 6 * 60 * 60 * 1000
+
+/**
+ * Whether this index is holding messages the mailbox no longer has, and has
+ * not already been rebuilt recently for the same reason.
+ */
+function shouldRebuild(state: {
+  backfill_done: number
+  indexed_count: number
+  total_estimate: number | null
+  last_rebuild_at: string | null
+}): boolean {
+  // Mid-backfill the count is meant to be below the total, not above it.
+  if (state.backfill_done !== 1) return false
+  if (!state.total_estimate) return false
+  if (state.indexed_count <= state.total_estimate * DRIFT_RATIO) return false
+
+  if (state.last_rebuild_at) {
+    const since = Date.now() - new Date(`${state.last_rebuild_at}Z`).getTime()
+    if (Number.isFinite(since) && since < REBUILD_EVERY_MS) return false
+  }
+
+  return true
+}
+
 export async function syncAccount(
   ownerId: string,
   account: AccountRow,
@@ -80,6 +119,24 @@ export async function syncAccount(
   try {
     const outcome = await withGmail(ownerId, account.id, async (session) => {
       const state = await getSyncState(account.id)
+
+      /*
+       * A drifted index repairs itself before anything else is attempted.
+       *
+       * Nothing else can: a backfill only adds, and an incremental pass only
+       * applies what happened after its cursor. Left alone, an index that has
+       * outlived its mailbox stays wrong for ever — and the person looking at
+       * it has no way to tell that the number is stale rather than true.
+       */
+      if (state && shouldRebuild(state)) {
+        console.log(
+          `rebuilding ${account.id}: ${state.indexed_count} indexed against ` +
+            `${state.total_estimate} in the mailbox`,
+        )
+        await resetIndex(account.id)
+
+        return backfill(account.id, session.accessToken, null)
+      }
 
       if (state?.backfill_done === 1) {
         // Complete but cursorless: the finishing step was interrupted. Take

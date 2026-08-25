@@ -402,6 +402,10 @@ test.describe('an index that has drifted', () => {
     const card = await openIndexing(page)
 
     await expect(card.getByText(/holds more than the mailbox does/)).toBeVisible()
+
+    // And it says the repair happens without being asked — the button is a
+    // way to hurry it, not the only way it ever gets fixed.
+    await expect(card.getByText(/rebuilds it on its own/)).toBeVisible()
   })
 
   test('a healthy index says nothing of the sort', async ({ page }) => {
