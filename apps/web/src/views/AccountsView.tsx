@@ -131,16 +131,11 @@ export function AccountsView({
                       {account.sync.error
                         ? `Indexing stopped: ${account.sync.error}`
                         : account.sync.backfilling
-                          ? `Indexed ${account.sync.indexed.toLocaleString()} so far${
-                              // Named as Gmail's, because "of about N" read as
-                              // though N were Hive's own count — and after a
-                              // rebuild that is the only large number left on
-                              // the line.
-                              account.sync.estimate &&
-                              account.sync.estimate >= account.sync.indexed
-                                ? ` — Gmail reports ${account.sync.estimate.toLocaleString()}`
-                                : ''
-                            }`
+                          ? // Gmail's own total is deliberately absent: it
+                            // lags badly after a bulk deletion, and printing
+                            // it beside Hive's count read as though the index
+                            // still held every one of them.
+                            `Indexed ${account.sync.indexed.toLocaleString()} so far`
                           : `Indexed ${account.sync.indexed.toLocaleString()} messages`}
                     </span>
                   )}

@@ -133,14 +133,14 @@ test.describe('index progress', () => {
     await openAccounts(page)
 
     /*
-     * The two numbers are named, because they belong to different people.
-     * "12,500 of about 103,412" read as though both were Hive's — and after a
-     * rebuild, when Hive's own count is back to zero, the mailbox size was
-     * the only figure on the line with any weight.
+     * Hive's count, and only Hive's. Gmail's `messagesTotal` used to sit
+     * beside it and lags badly after a bulk deletion — a mailbox emptied to a
+     * few thousand kept reporting a hundred thousand — so the pair read as
+     * though the index still held all of them. It drives the bar and is not
+     * printed.
      */
-    await expect(
-      page.getByText('Indexed 12,500 so far — Gmail reports 103,412'),
-    ).toBeVisible()
+    await expect(page.getByText('Indexed 12,500 so far')).toBeVisible()
+    await expect(page.getByText(/103,412/)).toBeHidden()
   })
 
   test('a finished index says so', async ({ page }) => {

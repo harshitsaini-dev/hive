@@ -110,28 +110,23 @@ export function IndexingPanel({
                         ? `Stopped: ${sync.error}`
                         : done
                           ? `Indexed ${sync.indexed.toLocaleString()} messages`
-                          : `Indexed ${(sync?.indexed ?? 0).toLocaleString()} so far${
-                              /*
-                               * "of about N" read as though N were Hive's
-                               * number, and after a rebuild — when Hive's own
-                               * count is back to zero — the mailbox size was
-                               * the only figure on the line with any weight.
-                               * Someone reasonably read "0 of about 116,458"
-                               * as the index still holding a hundred thousand.
-                               *
-                               * Suppressed when it is below the indexed count:
-                               * Gmail's own estimate is not always one.
-                               */
-                              sync?.estimate && sync.estimate >= sync.indexed
-                                ? ` — Gmail reports ${sync.estimate.toLocaleString()} in this mailbox`
-                                : ''
-                            }`}
+                          : `Indexed ${(sync?.indexed ?? 0).toLocaleString()} so far`}
                   </span>
 
                   {/*
                     A backfill on a large mailbox is hours of work spread over
                     many passes. A bar is the difference between "this is
                     progressing" and "this is stuck".
+                  */}
+                  {/*
+                    The bar uses Gmail's `messagesTotal`; the line no longer
+                    prints it.
+                    That number lags badly after a bulk deletion — a mailbox
+                    emptied down to a few thousand kept reporting a hundred
+                    thousand — so printing it beside Hive's own count invited
+                    the reading that the index was still holding all of them.
+                    As a bar it conveys "this is progressing" without claiming
+                    a total, which is the only thing it was ever good for.
                   */}
                   {sync && !done && sync.estimate && sync.estimate >= sync.indexed ? (
                     <span className="indexing__track" aria-hidden="true">
