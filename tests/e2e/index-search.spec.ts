@@ -135,7 +135,9 @@ test.describe('index-served search', () => {
     await expect
       .poll(() => JSON.parse(last(seen).get('structured') ?? '{}'))
       .toMatchObject({
-        folder: 'all',
+        // The folder, not "all": a search stays where it was made from
+        // unless someone asks it not to.
+        folder: 'inbox',
         hasAttachment: true,
         unreadOnly: true,
       })

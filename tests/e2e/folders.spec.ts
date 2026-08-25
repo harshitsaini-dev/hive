@@ -81,19 +81,29 @@ test.describe('drafts and spam', () => {
   })
 
   /*
-   * Searching from the inbox reaches archived mail — that was a real bug once.
-   * Searching from these three must not widen: in each, the folder *is* the
-   * question.
+   * A search stays where it was made from, in every folder. This used to be
+   * true only for Spam, Drafts and Trash — everywhere else a search widened
+   * to the whole mailbox, so searching in Sent returned inbound mail and the
+   * folder on screen stopped meaning anything the moment a word was typed.
    */
   test('a search inside them stays inside them', async ({ page }) => {
     const seen = await stub(page)
     await page.goto('/')
 
-    await page.getByRole('button', { name: 'Spam' }).click()
-    await page.getByPlaceholder('Search words in subject or body').fill('offer')
-    await page.getByRole('button', { name: 'Search', exact: true }).click()
+    for (const [label, folder] of [
+      ['Spam', 'spam'],
+      ['Sent', 'sent'],
+      ['Drafts', 'drafts'],
+      ['Inbox', 'inbox'],
+    ] as const) {
+      await page.getByRole('button', { name: label, exact: true }).click()
+      await page
+        .getByPlaceholder('Search words in subject or body')
+        .fill('offer')
+      await page.getByRole('button', { name: 'Search', exact: true }).click()
 
-    await expect.poll(() => seen.queries.at(-1)).toBe('in:spam offer')
+      await expect.poll(() => seen.queries.at(-1)).toBe(`in:${folder} offer`)
+    }
   })
 
   /*

@@ -40,6 +40,17 @@ export const MAX_COUNT = 250_000
 /** The deepest a sender scan may go, and the value meaning "all of them". */
 export const MAX_SCAN = 250_000
 
+/**
+ * How many distinct senders one analysis reports.
+ *
+ * Was two hundred, which is a reasonable list to read and a poor answer to
+ * "who is filling this mailbox" — the long tail is often the point, and the
+ * panel has a search over the list now. Still bounded, because the result is
+ * stored as one row and rendered as one list; when the bound bites, the panel
+ * says so rather than quietly presenting a slice as the whole.
+ */
+const MAX_SENDERS = 5_000
+
 export interface Tally {
   count: number
   withAttachment: number
@@ -70,6 +81,8 @@ export interface MailboxAnalysis {
   withoutAttachment: number
   scanned: number
   truncated: boolean
+  /** True when there were more distinct senders than one run will report. */
+  sendersTruncated?: boolean
   /** Per-mailbox totals, exact for the whole account like the figures above. */
   accounts: AccountTally[]
   senders: SenderTally[]
@@ -174,7 +187,7 @@ export async function runAnalysis(options: {
       if (state?.backfill_done === 1 && !folderMissing) {
         const rows = await tallySendersFromIndex(
           { ...scope, accountId: account.id },
-          500,
+          MAX_SENDERS,
         )
 
         for (const row of rows) {
@@ -250,6 +263,8 @@ export async function runAnalysis(options: {
     })
   }
 
+  const ranked = [...senders.values()].sort((a, b) => b.count - a.count)
+
   const result: MailboxAnalysis = {
     total,
     withAttachment,
@@ -259,11 +274,12 @@ export async function runAnalysis(options: {
     // it — saying otherwise would understate an answer that is complete.
     truncated: indexedAccounts === accounts.length ? false : truncated,
     accounts: perAccount,
-    // Ranked, and capped: a thousand rows of one message each is not a
-    // finding, and the client would render every one of them.
-    senders: [...senders.values()]
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 200),
+    // Ranked, and capped far higher than it was. Two hundred was chosen when
+    // the list was the only way to read it; there is a search box over it now,
+    // and cutting a mailbox's senders at two hundred hides exactly the long
+    // tail someone is hunting for.
+    senders: ranked.slice(0, MAX_SENDERS),
+    sendersTruncated: ranked.length > MAX_SENDERS,
   }
 
   /*

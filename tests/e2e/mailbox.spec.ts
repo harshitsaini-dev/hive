@@ -495,7 +495,7 @@ test.describe('bulk progress', () => {
  * their own search.
  */
 test.describe('how far a search reaches', () => {
-  test('applying a filter drops the folder scope', async ({ page }) => {
+  test('a search stays in the folder it was made from', async ({ page }) => {
     const calls = await stubApi(page)
     await page.goto('/')
 
@@ -506,28 +506,33 @@ test.describe('how far a search reaches', () => {
     await page.getByLabel('Has attachment').check()
     await page.getByRole('button', { name: 'Search', exact: true }).click()
 
+    /*
+     * The folder is the default now. It was the other way round, to stop a
+     * search of the inbox missing archived mail — and that traded one
+     * surprise for another: standing in Sent and searching returned inbound
+     * mail, because "everywhere" means exactly that.
+     */
     await expect.poll(() => calls.queries.at(-1)).toBe(
-      '-in:spam mega has:attachment',
+      'in:inbox mega has:attachment',
     )
-    await expect(
-      page.getByRole('heading', { name: 'Search results' }),
-    ).toBeVisible()
+    await expect(page.getByText(/Searching Inbox only/)).toBeVisible()
   })
 
-  test('the reach can be narrowed back to the folder', async ({ page }) => {
+  test('the reach can be widened, and narrowed again', async ({ page }) => {
     const calls = await stubApi(page)
     await page.goto('/')
 
     await page.getByPlaceholder('Search words in subject or body').fill('mega')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect.poll(() => calls.queries.at(-1)).toBe('in:inbox mega')
+
+    // Archived mail is a click away, and the header says which reach is in
+    // force — so neither answer is the silent one.
+    await page.getByRole('button', { name: 'Search everywhere' }).click()
     await expect.poll(() => calls.queries.at(-1)).toBe('-in:spam mega')
 
     await page.getByRole('button', { name: 'Only search Inbox' }).click()
     await expect.poll(() => calls.queries.at(-1)).toBe('in:inbox mega')
-
-    // And back out again, without retyping the search.
-    await page.getByRole('button', { name: 'Search everywhere' }).click()
-    await expect.poll(() => calls.queries.at(-1)).toBe('-in:spam mega')
   })
 
   test('the Trash view keeps its scope while searching', async ({ page }) => {
@@ -583,7 +588,7 @@ test.describe('custom date range', () => {
      * stopping on the 30th would be a filter that lies.
      */
     await expect.poll(() => calls.queries.at(-1)).toBe(
-      '-in:spam after:2019/01/01 before:2020/01/01',
+      'in:inbox after:2019/01/01 before:2020/01/01',
     )
   })
 
@@ -594,14 +599,14 @@ test.describe('custom date range', () => {
     await pickDate(page, 'Earliest date', 2020, 'June', '15 Jun 2020')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect.poll(() => calls.queries.at(-1)).toBe(
-      '-in:spam after:2020/06/15',
+      'in:inbox after:2020/06/15',
     )
 
     await page.getByRole('button', { name: 'Clear dates' }).click()
     await pickDate(page, 'Latest date', 2020, 'June', '15 Jun 2020')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect.poll(() => calls.queries.at(-1)).toBe(
-      '-in:spam before:2020/06/16',
+      'in:inbox before:2020/06/16',
     )
   })
 })

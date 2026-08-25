@@ -854,6 +854,14 @@ export function AnalyticsPanel({
             />
           </div>
 
+          {analysis.sendersTruncated && (
+            <p className="mailbox__truncated analytics__note">
+              <AlertIcon size={15} />
+              This mailbox has more distinct senders than one run reports. The
+              busiest are here; use the search below to find a specific one.
+            </p>
+          )}
+
           <h3 className="analytics__subtitle">
             Top senders
             <span className="hint">

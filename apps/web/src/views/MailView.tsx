@@ -75,17 +75,6 @@ function senderName(from: string): string {
   return match?.[1]?.trim() || from.replace(/[<>]/g, '')
 }
 
-/**
- * Folders a search stays inside.
- *
- * Searching from the inbox should reach archived mail — that was a real bug
- * once. Searching from Drafts, Spam or Trash should not: in each the folder
- * *is* the question, and widening it would answer a different one.
- */
-function pinnedFolder(mode: MailboxView): boolean {
-  return mode === 'trash' || mode === 'spam' || mode === 'drafts'
-}
-
 const EMPTY: Record<MailboxView, string> = {
   inbox: 'No mail here.',
   sent: 'Nothing sent yet.',
@@ -139,7 +128,7 @@ export function MailView({
   const [confirming, setConfirming] = useState(false)
   const [resolving, setResolving] = useState(false)
   /** Opt back into the folder when a search should not leave it. */
-  const [folderOnly, setFolderOnly] = useState(false)
+  const [searchEverywhere, setSearchEverywhere] = useState(false)
   /** True once the view has paged past the first response. */
   const [paged, setPaged] = useState(false)
   /**
@@ -186,8 +175,21 @@ export function MailView({
    * Trash view keeps its scope because the bin *is* the subject there.
    */
   const searching = hasAnyFilter(applied)
-  const spansAll =
-    !folderOnly && (everywhere || (searching && !pinnedFolder(mode)))
+  /*
+   * A search stays in the folder it was made from, unless asked otherwise.
+   *
+   * This was the other way round, and for a reason: searching the inbox used
+   * to miss archived mail, which is a real trap — so a filter widened the
+   * search to everything. But that trades one surprise for another. Standing
+   * in Sent and searching returned inbound mail, because "everything" is
+   * exactly what it says, and the folder on screen stopped meaning anything
+   * the moment a word was typed.
+   *
+   * The folder is the more defensible default: it is the one the person
+   * chose. Widening is one click away and the header says which reach is in
+   * force, so neither answer is silent.
+   */
+  const spansAll = everywhere || searchEverywhere
 
   /*
    * `in:drafts` and `in:spam` are folders Gmail keeps out of everything else,
@@ -696,7 +698,7 @@ export function MailView({
               <button
                 type="button"
                 className="btn-quiet"
-                onClick={() => setFolderOnly(true)}
+                onClick={() => setSearchEverywhere(false)}
               >
                 Only search {TITLES[mode]}
               </button>
@@ -704,13 +706,13 @@ export function MailView({
           </p>
         )}
 
-        {!spansAll && searching && mode !== 'trash' && (
+        {!spansAll && searching && (
           <p className="hint view__scope">
             Searching {TITLES[mode]} only — archived mail is not included.
             <button
               type="button"
               className="btn-quiet"
-              onClick={() => setFolderOnly(false)}
+              onClick={() => setSearchEverywhere(true)}
             >
               Search everywhere
             </button>
@@ -914,13 +916,11 @@ export function MailView({
 
       {!busy && !load.error && load.messages.length === 0 && (
         <p className="hint">
-          {pinnedFolder(mode)
+          {!searching
             ? EMPTY[mode]
-            : !searching
-              ? 'No mail here.'
-              : spansAll
-                ? 'Nothing in any folder matched those filters.'
-                : `Nothing in ${TITLES[mode]} matched — try searching all mail.`}
+            : spansAll
+              ? 'Nothing in any folder matched those filters.'
+              : `Nothing in ${TITLES[mode]} matched — try searching everywhere.`}
         </p>
       )}
 
@@ -1190,7 +1190,13 @@ export function MailView({
               // The panel's mailbox chip narrows the list as well; without
               // this, viewing one account's senders lists every account.
               if (scopeId !== undefined) setAccountId(scopeId)
-              setFolderOnly(false)
+              /*
+               * Viewing a sender from the analysis reaches every folder on
+               * purpose: the analysis counted the mailbox, so showing only
+               * the part of it that happens to be in this folder would be a
+               * different, smaller answer than the number that was clicked.
+               */
+              setSearchEverywhere(true)
               setReading(null)
             }}
           />
