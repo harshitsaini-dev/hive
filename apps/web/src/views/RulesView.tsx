@@ -15,7 +15,7 @@ export function RulesView({
   onChanged: () => Promise<void> | void
 }) {
   return (
-    <section className="view">
+    <section className="view view--wide">
       <header className="view__head">
         <h1>
           <ScheduleIcon size={20} />
@@ -36,13 +36,15 @@ export function RulesView({
       ) : (
         <>
           {/*
-            Background work lives together. A cleanup rule and the index are
-            both things Hive does while nobody is watching, and the difference
-            between them matters enough to be visible side by side: one moves
-            mail, the other only reads about it.
+            Rules first, index second.
+            Background work lives together — a cleanup rule and the index are
+            both things Hive does while nobody is watching — but the index
+            draws a row per connected mailbox, and nineteen of those pushed
+            the thing this page is named after off the bottom of the screen.
+            The shorter, and the reason anyone came here, goes on top.
           */}
-          <IndexingPanel accounts={accounts} onChanged={onChanged} />
           <RulesPanel accounts={accounts} />
+          <IndexingPanel accounts={accounts} onChanged={onChanged} />
         </>
       )}
     </section>

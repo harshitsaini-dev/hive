@@ -1255,6 +1255,8 @@ textarea:focus-visible {
   max-width: 46rem;
 }
 
+
+
 .view__head {
   margin-bottom: 1.25rem;
 }
@@ -3487,6 +3489,7 @@ a.link-plain {
 
 .indexing li {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 0.5rem 0.75rem;
   align-items: center;
@@ -3774,4 +3777,33 @@ a.link-plain {
 .indexing__stale svg {
   flex: none;
   margin-top: 0.15rem;
+}
+
+/* ---- page width ---------------------------------------------------------- */
+
+/*
+ * Last word on width, deliberately.
+ *
+ * There are three `.view` rules in this file — 46rem, none, and 52rem — and
+ * the last one wins wherever it lands. A wide-page rule written above them
+ * simply did nothing, which is how one page ended up with two cards at 672px
+ * and 832px and no visible reason for the difference.
+ */
+.view--wide {
+  max-width: 60rem;
+}
+
+/*
+ * A card takes the width of the page and no more.
+ *
+ * Without this a card is sized by its own widest row, so the indexing card —
+ * an address plus three buttons — stretched to fit while the rules card
+ * beside it stayed at the measure meant for a form.
+ */
+.view--wide > .card,
+.view--wide > .rules,
+.view--wide > * > .card {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
 }

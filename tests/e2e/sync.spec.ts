@@ -438,3 +438,91 @@ test.describe('an index that has drifted', () => {
     expect(seen.reindexCalls).toEqual([])
   })
 })
+
+/*
+ * The Rules page carries two cards, and both had gone wrong in ways that only
+ * showed up with real data: the index draws a row per connected mailbox, and
+ * nineteen of those pushed the thing the page is named after off the bottom
+ * of the screen — while the two cards sat at visibly different widths for no
+ * reason a reader could see.
+ */
+test.describe('the rules page layout', () => {
+  test.use({ viewport: { width: 1440, height: 900 } })
+
+  async function manyAccounts(page: Page) {
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'u1', email: 'tester@example.test' },
+        }),
+      }),
+    )
+    await page.route('**/api/accounts', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          accounts: Array.from({ length: 19 }, (_, n) => ({
+            id: `a${n}`,
+            gmailAddress: `mailbox.${n}@example.test`,
+            status: 'active',
+            connectedAt: '2026-08-01T00:00:00.000Z',
+            lastSyncedAt: null,
+            sync: {
+              indexed: 1520,
+              estimate: 2000,
+              backfilling: false,
+              paused: false,
+              lastSyncedAt: null,
+              nextRunAt: new Date(Date.now() + 60_000).toISOString(),
+              error: null,
+            },
+          })),
+        }),
+      }),
+    )
+    await page.route('**/api/rules', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ rules: [] }),
+      }),
+    )
+    await page.route('**/api/messages?**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: [],
+          nextPageToken: null,
+          accounts: [],
+          skipped: [],
+        }),
+      }),
+    )
+  }
+
+  test('rules come before the index, at the same width', async ({ page }) => {
+    await manyAccounts(page)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Rules' }).click()
+    await page.waitForSelector('.indexing')
+
+    const rules = (await page.locator('.rules').boundingBox())!
+    const index = (await page.locator('.indexing').boundingBox())!
+    const cards = page.locator('.app__main .card')
+
+    // The short card, and the reason anyone came here, is on top.
+    expect(rules.y).toBeLessThan(index.y)
+
+    // Two cards, one width. It was 672 against 832, because the index card
+    // was sized by its own widest row rather than by the page.
+    const widths = await cards.evaluateAll((els) =>
+      els.map((el) => Math.round(el.getBoundingClientRect().width)),
+    )
+    expect(new Set(widths).size).toBe(1)
+    expect(widths[0]).toBeGreaterThan(832)
+  })
+})
