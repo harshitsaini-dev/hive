@@ -132,8 +132,14 @@ test.describe('index progress', () => {
     })
     await openAccounts(page)
 
+    /*
+     * The two numbers are named, because they belong to different people.
+     * "12,500 of about 103,412" read as though both were Hive's — and after a
+     * rebuild, when Hive's own count is back to zero, the mailbox size was
+     * the only figure on the line with any weight.
+     */
     await expect(
-      page.getByText('Indexing — 12,500 of about 103,412 so far'),
+      page.getByText('Indexed 12,500 so far — Gmail reports 103,412'),
     ).toBeVisible()
   })
 
@@ -374,8 +380,8 @@ test('an estimate smaller than the count is not shown', async ({ page }) => {
   })
   const card = await openIndexing(page)
 
-  await expect(card.getByText('Indexing — 26,829 so far')).toBeVisible()
-  await expect(card.getByText(/of about/)).toBeHidden()
+  await expect(card.getByText('Indexed 26,829 so far')).toBeVisible()
+  await expect(card.getByText(/Gmail reports/)).toBeHidden()
 })
 
 /*

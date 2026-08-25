@@ -131,14 +131,16 @@ export function AccountsView({
                       {account.sync.error
                         ? `Indexing stopped: ${account.sync.error}`
                         : account.sync.backfilling
-                          ? `Indexing — ${account.sync.indexed.toLocaleString()}${
-                              // Suppressed when it is below what is already
-                              // indexed; Gmail's estimate is not always one.
+                          ? `Indexed ${account.sync.indexed.toLocaleString()} so far${
+                              // Named as Gmail's, because "of about N" read as
+                              // though N were Hive's own count — and after a
+                              // rebuild that is the only large number left on
+                              // the line.
                               account.sync.estimate &&
                               account.sync.estimate >= account.sync.indexed
-                                ? ` of about ${account.sync.estimate.toLocaleString()}`
+                                ? ` — Gmail reports ${account.sync.estimate.toLocaleString()}`
                                 : ''
-                            } so far`
+                            }`
                           : `Indexed ${account.sync.indexed.toLocaleString()} messages`}
                     </span>
                   )}

@@ -110,18 +110,22 @@ export function IndexingPanel({
                         ? `Stopped: ${sync.error}`
                         : done
                           ? `Indexed ${sync.indexed.toLocaleString()} messages`
-                          : `Indexing — ${(sync?.indexed ?? 0).toLocaleString()}${
+                          : `Indexed ${(sync?.indexed ?? 0).toLocaleString()} so far${
                               /*
-                               * Only when it is not obviously nonsense. Gmail's
-                               * own `resultSizeEstimate` once reported 501 for
-                               * a mailbox of tens of thousands, which produced
-                               * "26,829 of about 501" — a number that destroys
-                               * confidence in the two beside it.
+                               * "of about N" read as though N were Hive's
+                               * number, and after a rebuild — when Hive's own
+                               * count is back to zero — the mailbox size was
+                               * the only figure on the line with any weight.
+                               * Someone reasonably read "0 of about 116,458"
+                               * as the index still holding a hundred thousand.
+                               *
+                               * Suppressed when it is below the indexed count:
+                               * Gmail's own estimate is not always one.
                                */
                               sync?.estimate && sync.estimate >= sync.indexed
-                                ? ` of about ${sync.estimate.toLocaleString()}`
+                                ? ` — Gmail reports ${sync.estimate.toLocaleString()} in this mailbox`
                                 : ''
-                            } so far`}
+                            }`}
                   </span>
 
                   {/*
