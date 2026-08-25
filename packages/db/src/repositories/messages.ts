@@ -563,3 +563,13 @@ export async function resetIndex(accountId: string): Promise<void> {
     touchRebuilt: true,
   })
 }
+
+/** Every Gmail id this account has indexed, for reconciling against Gmail. */
+export async function listIndexedIds(accountId: string): Promise<string[]> {
+  const result = await db().execute({
+    sql: 'SELECT gmail_message_id FROM message_index WHERE account_id = ?',
+    args: [accountId],
+  })
+
+  return result.rows.map((row) => String(row.gmail_message_id))
+}

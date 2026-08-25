@@ -32,8 +32,8 @@ import {
   countIndexed,
   deleteIndexedMessages,
   getSyncState,
+  listIndexedIds,
   markHasAttachment,
-  resetIndex,
   updateSyncState,
   upsertMessages,
   type AccountRow,
@@ -75,41 +75,76 @@ export interface SyncOutcome {
  * of finishing one and leaving the rest cold.
  */
 /**
- * How stale an index has to look before it repairs itself, and how rarely.
+ * How often an index is checked against the mailbox it claims to describe.
  *
- * A rebuild reads the whole mailbox again — real Gmail quota, and degraded
- * search until it finishes — so this is a check on a timer rather than a
- * rebuild on a timer. Unconditionally rebuilding every few hours would cost
- * more than the drift it fixes.
+ * This replaced a heuristic that compared the number of indexed rows against
+ * the mailbox's `messagesTotal` and rebuilt when it looked too high. That was
+ * wrong in a way that could never settle: the index deliberately holds Spam
+ * and Trash and `messagesTotal` does not count them, so an account with a
+ * full bin was permanently "out of date" — the warning stayed after every
+ * rebuild, and the rebuild ran again six hours later, for ever.
  *
- * The tenth of slack is because the two numbers are taken at different
- * moments and Gmail counts drafts and chats in its own total; the six hours
- * is what stops a wrong guess doing this over and over.
+ * Comparing ids instead of counts cannot be wrong in that way, because both
+ * sides are the same question asked of the same mailbox.
  */
-const DRIFT_RATIO = 1.1
-const REBUILD_EVERY_MS = 6 * 60 * 60 * 1000
+const RECONCILE_EVERY_MS = 6 * 60 * 60 * 1000
 
 /**
- * Whether this index is holding messages the mailbox no longer has, and has
- * not already been rebuilt recently for the same reason.
+ * Removes indexed messages that Gmail no longer has.
+ *
+ * Nothing else can. A backfill only adds; an incremental pass only applies
+ * what the history feed reports since its cursor, and Gmail keeps about
+ * thirty days of that. Mail deleted before the cursor existed — or while the
+ * first pass was still running — stays indexed for good.
+ *
+ * Deliberately not a rebuild, which was the previous answer and cost far more
+ * than the problem: ids come back 500 to a call and carry no metadata, so
+ * checking a twenty-thousand-message mailbox is about forty cheap requests.
+ * Re-reading it would be twenty thousand expensive ones.
  */
-function shouldRebuild(state: {
-  backfill_done: number
-  indexed_count: number
-  total_estimate: number | null
-  last_rebuild_at: string | null
-}): boolean {
-  // Mid-backfill the count is meant to be below the total, not above it.
-  if (state.backfill_done !== 1) return false
-  if (!state.total_estimate) return false
-  if (state.indexed_count <= state.total_estimate * DRIFT_RATIO) return false
+async function reconcile(
+  accountId: string,
+  accessToken: string,
+): Promise<number> {
+  const live = new Set<string>()
+  let pageToken: string | undefined
 
-  if (state.last_rebuild_at) {
-    const since = Date.now() - new Date(`${state.last_rebuild_at}Z`).getTime()
-    if (Number.isFinite(since) && since < REBUILD_EVERY_MS) return false
+  do {
+    const page = await listMessages(accessToken, {
+      pageToken,
+      maxResults: PAGE,
+      // The index covers them, so the comparison has to as well — this is
+      // exactly the mismatch that made the old check unfixable.
+      includeSpamTrash: true,
+    })
+
+    for (const ref of page.messages) live.add(ref.id)
+    pageToken = page.nextPageToken
+  } while (pageToken)
+
+  const indexed = await listIndexedIds(accountId)
+  const gone = indexed.filter((id) => !live.has(id))
+
+  // In chunks: a delete lists every id in the statement, and SQLite has a
+  // limit on how many variables one statement may carry.
+  for (let i = 0; i < gone.length; i += 400) {
+    await deleteIndexedMessages(accountId, gone.slice(i, i + 400))
   }
 
-  return true
+  await updateSyncState(accountId, {
+    touchRebuilt: true,
+    indexedCount: await countIndexed(accountId),
+  })
+
+  return gone.length
+}
+
+/** Whether this index is due a comparison against the mailbox itself. */
+function dueReconcile(state: { last_rebuild_at: string | null }): boolean {
+  if (!state.last_rebuild_at) return true
+
+  const since = Date.now() - new Date(`${state.last_rebuild_at}Z`).getTime()
+  return !Number.isFinite(since) || since >= RECONCILE_EVERY_MS
 }
 
 export async function syncAccount(
@@ -121,21 +156,15 @@ export async function syncAccount(
       const state = await getSyncState(account.id)
 
       /*
-       * A drifted index repairs itself before anything else is attempted.
-       *
-       * Nothing else can: a backfill only adds, and an incremental pass only
-       * applies what happened after its cursor. Left alone, an index that has
-       * outlived its mailbox stays wrong for ever — and the person looking at
-       * it has no way to tell that the number is stale rather than true.
+       * A completed index is compared against the mailbox every few hours,
+       * and anything Gmail no longer has is dropped. This is the only thing
+       * that can remove what the history feed never reported.
        */
-      if (state && shouldRebuild(state)) {
-        console.log(
-          `rebuilding ${account.id}: ${state.indexed_count} indexed against ` +
-            `${state.total_estimate} in the mailbox`,
-        )
-        await resetIndex(account.id)
-
-        return backfill(account.id, session.accessToken, null)
+      if (state?.backfill_done === 1 && dueReconcile(state)) {
+        const removed = await reconcile(account.id, session.accessToken)
+        if (removed > 0) {
+          console.log(`reconciled ${account.id}: dropped ${removed}`)
+        }
       }
 
       if (state?.backfill_done === 1) {

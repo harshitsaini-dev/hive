@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ConnectedAccount, SyncProgress } from '@hive/shared-types'
+import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from './api.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { AlertIcon, ChartIcon } from './Icons.js'
@@ -37,19 +37,6 @@ function formatWhen(iso: string): string {
     hour: 'numeric',
     minute: '2-digit',
   })}`
-}
-
-/**
- * Whether an index is holding messages the mailbox no longer has.
- *
- * A tenth of slack, because the two numbers are taken at different moments
- * and Gmail counts drafts and chats in its own total. Below that, the
- * difference is noise; well above it, the index is stale in the one way it
- * cannot fix by itself.
- */
-function stale(sync: SyncProgress | undefined): boolean {
-  if (!sync || sync.backfilling || !sync.estimate) return false
-  return sync.indexed > sync.estimate * 1.1
 }
 
 export function IndexingPanel({
@@ -97,9 +84,10 @@ export function IndexingPanel({
         Hive keeps a local index of who sent what, so searching and analysing
         do not mean asking Gmail about every message one at a time. It checks
         every ten minutes on its own, picks up again by itself after Gmail
-        rate-limits it, and rebuilds itself if it ever drifts out of step with
-        the mailbox — there is nothing you need to press. Sender, subject,
-        date and labels only, never the contents of a message.
+        rate-limits it, and every few hours compares itself against the
+        mailbox and drops anything you have deleted since. There is nothing
+        you need to press. Sender, subject, date and labels only, never the
+        contents of a message.
       </p>
 
       {accounts.length === 0 ? (
@@ -156,22 +144,6 @@ export function IndexingPanel({
                     indistinguishable from work that has stopped — which is
                     what turned "Index now" from a nudge into a habit.
                   */}
-                  {/*
-                    An index that has drifted cannot notice on its own.
-                    `history.list` only reports what happened after its cursor,
-                    so mail deleted before that — or while the first pass was
-                    still running — stays indexed for good. Comparing the two
-                    counts is the only thing that can see it.
-                  */}
-                  {stale(sync) && (
-                    <span className="hint indexing__stale">
-                      <AlertIcon size={13} />
-                      This index is out of date — it holds more than the
-                      mailbox does. Hive rebuilds it on its own within a few
-                      hours; the button does it now.
-                    </span>
-                  )}
-
                   {sync?.nextRunAt && !sync.paused && (
                     <span className="hint indexing__next">
                       Next check {formatWhen(sync.nextRunAt)}

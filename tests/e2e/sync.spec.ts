@@ -386,43 +386,10 @@ test('an estimate smaller than the count is not shown', async ({ page }) => {
  * It could not. A backfill only adds, and an incremental pass only applies
  * what `history.list` reports since its cursor; anything deleted while the
  * first pass was still running, or after the cursor lapsed, is invisible to
- * both. The index had no way to notice, and no way to be rebuilt.
+ * both. The server reconciles against Gmail's own id list every few hours to
+ * catch exactly that; Rebuild is the way to do it now rather than wait.
  */
 test.describe('an index that has drifted', () => {
-  test('says so when it holds more than the mailbox does', async ({ page }) => {
-    await stub(page, {
-      indexed: 21_538,
-      estimate: 2_100,
-      backfilling: false,
-      paused: false,
-      lastSyncedAt: '2026-08-24 12:00:00',
-      nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-      error: null,
-    })
-    const card = await openIndexing(page)
-
-    await expect(card.getByText(/holds more than the mailbox does/)).toBeVisible()
-
-    // And it says the repair happens without being asked — the button is a
-    // way to hurry it, not the only way it ever gets fixed.
-    await expect(card.getByText(/rebuilds it on its own/)).toBeVisible()
-  })
-
-  test('a healthy index says nothing of the sort', async ({ page }) => {
-    await stub(page, {
-      indexed: 2_050,
-      estimate: 2_100,
-      backfilling: false,
-      paused: false,
-      lastSyncedAt: '2026-08-24 12:00:00',
-      nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-      error: null,
-    })
-    const card = await openIndexing(page)
-
-    await expect(card.getByText(/holds more than the mailbox/)).toBeHidden()
-  })
-
   /*
    * Rebuild is a different request from "Index now", and the difference is
    * the entire point — one advances the index, only the other can drop what
