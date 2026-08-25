@@ -68,6 +68,9 @@ const FOLDER_QUERY: Record<MailboxView, string> = {
 }
 
 /** The age presets, in days, for the structural half of the same query. */
+/** How many sender rows are drawn at a time. */
+const SENDER_PAGE = 100
+
 const AGE_DAYS: Record<string, number> = {
   '30d': 30,
   '90d': 90,
@@ -183,6 +186,15 @@ export function AnalyticsPanel({
   const [wholeMailbox, setWholeMailbox] = useState(false)
   /** Narrows the sender list by name or address, without another run. */
   const [senderFilter, setSenderFilter] = useState('')
+  /**
+   * How many sender rows are drawn.
+   *
+   * The run brings back thousands and the list is scanned rather than read,
+   * so a hundred is a screenful to work through and the rest is a click away.
+   * A render limit, not a data one — everything below is already in hand,
+   * which is why "Select all" can act on it whether or not it is on screen.
+   */
+  const [visible, setVisible] = useState(SENDER_PAGE)
   /** How far a clear has got, so a slow one does not look like a hung one. */
   const [clearing, setClearing] = useState<{
     done: number
@@ -366,6 +378,7 @@ export function AnalyticsPanel({
       setRanAt(new Date().toISOString())
       setScope({ accountId, query })
       setSelected(new Set())
+      setVisible(SENDER_PAGE)
     } catch (caught) {
       setError(
         caught instanceof ApiRequestError || caught instanceof Error
@@ -802,7 +815,10 @@ export function AnalyticsPanel({
                 type="button"
                 className="analytics__stat"
                 aria-pressed={onlyWith === stat.key}
-                onClick={() => setOnlyWith(stat.key)}
+                onClick={() => {
+                  setOnlyWith(stat.key)
+                  setVisible(SENDER_PAGE)
+                }}
               >
                 <strong>{stat.value.toLocaleString()}</strong>
                 <span className="hint">{stat.label}</span>
@@ -825,7 +841,10 @@ export function AnalyticsPanel({
                 type="button"
                 className="analytics__chip"
                 aria-pressed={onlyAccount === ''}
-                onClick={() => setOnlyAccount('')}
+                onClick={() => {
+                  setOnlyAccount('')
+                  setVisible(SENDER_PAGE)
+                }}
               >
                 All connected
                 <span className="hint">{analysis.total.toLocaleString()}</span>
@@ -837,7 +856,10 @@ export function AnalyticsPanel({
                   type="button"
                   className="analytics__chip"
                   aria-pressed={onlyAccount === entry.accountId}
-                  onClick={() => setOnlyAccount(entry.accountId)}
+                  onClick={() => {
+                    setOnlyAccount(entry.accountId)
+                    setVisible(SENDER_PAGE)
+                  }}
                 >
                   {entry.gmailAddress}
                   <span className="hint">{entry.count.toLocaleString()}</span>
@@ -853,14 +875,6 @@ export function AnalyticsPanel({
               style={{ width: `${percent(scopedAttached, scopedTotal)}%` }}
             />
           </div>
-
-          {analysis.sendersTruncated && (
-            <p className="mailbox__truncated analytics__note">
-              <AlertIcon size={15} />
-              This mailbox has more distinct senders than one run reports. The
-              busiest are here; use the search below to find a specific one.
-            </p>
-          )}
 
           <h3 className="analytics__subtitle">
             Top senders
@@ -913,7 +927,13 @@ export function AnalyticsPanel({
                   type="search"
                   value={senderFilter}
                   placeholder="Find a sender in these results"
-                  onChange={(event) => setSenderFilter(event.target.value)}
+                  onChange={(event) => {
+                    setSenderFilter(event.target.value)
+                    // Back to the first screenful: a filter that left the
+                    // list scrolled open would show a stale amount of a
+                    // different set.
+                    setVisible(SENDER_PAGE)
+                  }}
                 />
               </div>
 
@@ -973,7 +993,7 @@ export function AnalyticsPanel({
               </div>
 
               <ul className="analytics__senders">
-                {shown.map((sender) => (
+                {shown.slice(0, visible).map((sender) => (
                   <li key={sender.address}>
                     <div className="analytics__sender">
                       <input
@@ -1042,6 +1062,22 @@ export function AnalyticsPanel({
                   </li>
                 ))}
               </ul>
+
+              {shown.length > visible && (
+                <div className="loadmore">
+                  <span className="hint">
+                    Showing {visible.toLocaleString()} of{' '}
+                    {shown.length.toLocaleString()} senders
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setVisible(visible + SENDER_PAGE)}
+                  >
+                    Load {Math.min(SENDER_PAGE, shown.length - visible)} more
+                  </button>
+                </div>
+              )}
             </>
           )}
         </>

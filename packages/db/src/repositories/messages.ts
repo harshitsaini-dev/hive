@@ -158,7 +158,8 @@ export interface IndexedSenderTally {
  */
 export async function tallySendersFromIndex(
   query: IndexQuery,
-  limit = 200,
+  /** Omit for every sender. A grouped scan of one indexed column either way. */
+  limit?: number,
 ): Promise<IndexedSenderTally[]> {
   const where = buildWhere(query)
 
@@ -170,8 +171,8 @@ export async function tallySendersFromIndex(
           WHERE ${where.sql}
           GROUP BY from_addr
           ORDER BY count DESC
-          LIMIT ?`,
-    args: [...where.args, limit],
+          ${limit === undefined ? '' : 'LIMIT ?'}`,
+    args: limit === undefined ? where.args : [...where.args, limit],
   })
 
   return result.rows.map((row) => ({

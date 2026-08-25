@@ -164,8 +164,6 @@ export interface MailboxAnalysis {
   /** How many messages the sender breakdown actually read headers for. */
   scanned: number
   truncated: boolean
-  /** True when there were more distinct senders than one run will report. */
-  sendersTruncated?: boolean
   /** Per-mailbox totals, exact for the whole account like the figures above. */
   accounts: AccountTally[]
   senders: SenderTally[]

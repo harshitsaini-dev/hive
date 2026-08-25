@@ -849,29 +849,69 @@ test.describe('the totals and the sender list measure the same thing', () => {
 })
 
 /*
- * The sender list was capped at two hundred — a reasonable list to read, and
- * a poor answer to "who is filling this mailbox", because the long tail is
- * often the point. It is far larger now, and says so when it still bites.
+ * The list is scanned, not read. A run brings back every sender — there is no
+ * cap any more — so the panel draws a screenful and keeps the rest a click
+ * away, while everything that acts on the list acts on all of it.
  */
-test.describe('the sender list is not quietly cut short', () => {
-  test('says when there were more senders than it reports', async ({ page }) => {
-    await stub(page, { ...ANALYSIS, sendersTruncated: true })
+test.describe('a long sender list', () => {
+  const MANY = {
+    ...ANALYSIS,
+    senders: Array.from({ length: 250 }, (_, n) => ({
+      address: `sender${n}@example.test`,
+      name: `Sender ${n}`,
+      count: 250 - n,
+      withAttachment: 0,
+      byAccount: { 'acc-1': { count: 250 - n, withAttachment: 0 } },
+    })),
+  }
+
+  test('draws a hundred, and loads more on request', async ({ page }) => {
+    await stub(page, MANY)
     const panel = await openPanel(page)
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
 
-    await expect(
-      panel.getByText(/more distinct senders than one run reports/),
-    ).toBeVisible()
+    const rows = panel.locator('.analytics__senders li')
+    await expect(rows).toHaveCount(100)
+    await expect(panel.getByText('Showing 100 of 250 senders')).toBeVisible()
+
+    await panel.getByRole('button', { name: /Load 100 more/ }).click()
+    await expect(rows).toHaveCount(200)
+
+    await panel.getByRole('button', { name: /Load 50 more/ }).click()
+    await expect(rows).toHaveCount(250)
+    await expect(panel.getByText(/Showing .* senders/)).toBeHidden()
   })
 
-  test('and says nothing when it does not', async ({ page }) => {
-    await stub(page)
+  /*
+   * The load limit is about rendering, not about what is in hand — so "select
+   * all" means all of them, not the hundred that happen to be drawn.
+   */
+  test('Select all takes every sender, not the visible hundred', async ({
+    page,
+  }) => {
+    await stub(page, MANY)
     const panel = await openPanel(page)
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
 
-    await expect(panel.getByText('Kapil Gupta')).toBeVisible()
-    await expect(
-      panel.getByText(/more distinct senders than one run reports/),
-    ).toBeHidden()
+    await expect(panel.locator('.analytics__senders li')).toHaveCount(100)
+    await panel.getByLabel('Select all').check()
+
+    await expect(panel.getByText('250 selected · 31,375 messages')).toBeVisible()
+  })
+
+  test('the search runs across all of them, not the drawn ones', async ({
+    page,
+  }) => {
+    await stub(page, MANY)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    // Sender 240 is far below the first hundred rows.
+    await panel
+      .getByPlaceholder('Find a sender in these results')
+      .fill('sender240@')
+
+    await expect(panel.locator('.analytics__senders li')).toHaveCount(1)
+    await expect(panel.getByText('sender240@example.test')).toBeVisible()
   })
 })
