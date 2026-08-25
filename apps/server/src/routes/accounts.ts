@@ -5,6 +5,7 @@ import {
   findAccountForOwner,
   listAccountsForOwner,
   listSyncStates,
+  resetIndex,
   updateSyncState,
   upsertAccount,
   writeAuditEntry,
@@ -126,6 +127,37 @@ accountsRouter.post(
 
     void syncAccount(user.id, account).catch((error: unknown) => {
       console.error(`sync for ${account.id} failed:`, error)
+    })
+  }),
+)
+
+/**
+ * POST /accounts/:id/reindex — throw the index away and build it again.
+ *
+ * Distinct from `/sync`, which advances the index by one pass. That
+ * distinction was invisible from the outside and mattered enormously: an
+ * index only ever grows from a backfill, and an incremental pass only applies
+ * what changed since its cursor — so anything deleted while the backfill was
+ * still running, or after the cursor lapsed, stays indexed for good. Pressing
+ * "Index now" could never fix that, however many times it was pressed.
+ */
+accountsRouter.post(
+  '/:id/reindex',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const user = authed(req).user
+    const account = (await listAccountsForOwner(user.id)).find(
+      (row) => row.id === req.params.id,
+    )
+    if (!account) throw notFound('No such account')
+
+    await resetIndex(account.id)
+    res.json({ started: true })
+
+    // The first pass starts now rather than at the next tick; a rebuild is
+    // something someone is watching.
+    void syncAccount(user.id, account).catch((error: unknown) => {
+      console.error(`rebuild for ${account.id} failed:`, error)
     })
   }),
 )

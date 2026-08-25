@@ -349,7 +349,19 @@ export const api = {
       method: 'POST',
     }),
 
-  /** Turns the hourly background sweep on or off for one mailbox. */
+  /**
+   * Throws one mailbox's index away and builds it again.
+   *
+   * Not the same as `syncAccount`, which advances it. Only a rebuild can drop
+   * what the history feed never reported — anything deleted while the first
+   * pass was still running, or after the cursor lapsed.
+   */
+  reindexAccount: (accountId: string) =>
+    request<{ started: true }>(`/accounts/${accountId}/reindex`, {
+      method: 'POST',
+    }),
+
+  /** Turns the background sweep on or off for one mailbox. */
   setIndexing: (accountId: string, paused: boolean) =>
     request<{ paused: boolean }>(`/accounts/${accountId}/indexing`, {
       method: 'PUT',

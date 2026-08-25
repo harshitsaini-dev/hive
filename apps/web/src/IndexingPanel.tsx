@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import type { ConnectedAccount } from '@hive/shared-types'
+import type { ConnectedAccount, SyncProgress } from '@hive/shared-types'
 import { api, ApiRequestError } from './api.js'
+import { ConfirmDialog } from './ConfirmDialog.js'
 import { AlertIcon, ChartIcon } from './Icons.js'
 
 /**
@@ -38,6 +39,19 @@ function formatWhen(iso: string): string {
   })}`
 }
 
+/**
+ * Whether an index is holding messages the mailbox no longer has.
+ *
+ * A tenth of slack, because the two numbers are taken at different moments
+ * and Gmail counts drafts and chats in its own total. Below that, the
+ * difference is noise; well above it, the index is stale in the one way it
+ * cannot fix by itself.
+ */
+function stale(sync: SyncProgress | undefined): boolean {
+  if (!sync || sync.backfilling || !sync.estimate) return false
+  return sync.indexed > sync.estimate * 1.1
+}
+
 export function IndexingPanel({
   accounts,
   onChanged,
@@ -46,6 +60,10 @@ export function IndexingPanel({
   onChanged: () => Promise<void> | void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
+  /** The mailbox awaiting confirmation before its index is thrown away. */
+  const [pendingRebuild, setPendingRebuild] = useState<ConnectedAccount | null>(
+    null,
+  )
   const [error, setError] = useState<string | null>(null)
 
   async function act(accountId: string, work: () => Promise<unknown>) {
@@ -137,6 +155,21 @@ export function IndexingPanel({
                     indistinguishable from work that has stopped — which is
                     what turned "Index now" from a nudge into a habit.
                   */}
+                  {/*
+                    An index that has drifted cannot notice on its own.
+                    `history.list` only reports what happened after its cursor,
+                    so mail deleted before that — or while the first pass was
+                    still running — stays indexed for good. Comparing the two
+                    counts is the only thing that can see it.
+                  */}
+                  {stale(sync) && (
+                    <span className="hint indexing__stale">
+                      <AlertIcon size={13} />
+                      This index is out of date — it holds more than the
+                      mailbox does. Rebuild it to drop what has been deleted.
+                    </span>
+                  )}
+
                   {sync?.nextRunAt && !sync.paused && (
                     <span className="hint indexing__next">
                       Next check {formatWhen(sync.nextRunAt)}
@@ -155,6 +188,15 @@ export function IndexingPanel({
                     }
                   >
                     {busy === account.id ? 'Working…' : 'Index now'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-quiet"
+                    disabled={busy === account.id}
+                    onClick={() => setPendingRebuild(account)}
+                  >
+                    Rebuild
                   </button>
 
                   <button
@@ -190,6 +232,21 @@ export function IndexingPanel({
       <div role="alert" aria-live="assertive">
         {error && <p className="bad">{error}</p>}
       </div>
+
+      {pendingRebuild && (
+        <ConfirmDialog
+          title={`Rebuild the index for ${pendingRebuild.gmailAddress}?`}
+          body="Hive reads the whole mailbox again from scratch. Nothing in Gmail changes and nothing is deleted — but searching and analysing fall back to asking Gmail directly until it finishes, which is slower. On a large mailbox this takes a while."
+          confirmLabel="Rebuild index"
+          busy={busy === pendingRebuild.id}
+          onCancel={() => setPendingRebuild(null)}
+          onConfirm={() => {
+            const account = pendingRebuild
+            setPendingRebuild(null)
+            void act(account.id, () => api.reindexAccount(account.id))
+          }}
+        />
+      )}
     </section>
   )
 }

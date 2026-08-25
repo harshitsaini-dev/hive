@@ -535,3 +535,26 @@ export async function findSentDisplayName(
 
   return null
 }
+
+/**
+ * Throws an index away so it can be built again from scratch.
+ *
+ * Needed because nothing else can remove what the history feed missed. A
+ * backfill only ever adds, and an incremental pass only applies changes since
+ * its cursor — so a mailbox emptied while the backfill was still running, or
+ * while the cursor had lapsed, keeps every one of those messages in the index
+ * for good. Counting them and finding twenty-one thousand where two thousand
+ * remain is the visible end of that.
+ */
+export async function resetIndex(accountId: string): Promise<void> {
+  await clearIndex(accountId)
+
+  await updateSyncState(accountId, {
+    backfillDone: false,
+    backfillToken: null,
+    historyId: null,
+    indexedCount: 0,
+    coversSpamTrash: false,
+    lastError: null,
+  })
+}

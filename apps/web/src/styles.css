@@ -3763,3 +3763,15 @@ a.link-plain {
 .message__open {
   user-select: text;
 }
+
+.indexing__stale {
+  display: flex;
+  gap: 0.35rem;
+  align-items: flex-start;
+  color: var(--warn-ink);
+}
+
+.indexing__stale svg {
+  flex: none;
+  margin-top: 0.15rem;
+}

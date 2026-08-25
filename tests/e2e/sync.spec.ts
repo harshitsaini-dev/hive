@@ -24,12 +24,18 @@ const BASE = {
 
 interface Seen {
   syncCalls: string[]
+  reindexCalls: string[]
   indexingCalls: unknown[]
   accountsCalls: number
 }
 
 async function stub(page: Page, sync: unknown): Promise<Seen> {
-  const seen: Seen = { syncCalls: [], indexingCalls: [], accountsCalls: 0 }
+  const seen: Seen = {
+    syncCalls: [],
+    reindexCalls: [],
+    indexingCalls: [],
+    accountsCalls: 0,
+  }
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
@@ -55,6 +61,15 @@ async function stub(page: Page, sync: unknown): Promise<Seen> {
       body: JSON.stringify({ rules: [] }),
     }),
   )
+
+  await page.route('**/api/accounts/*/reindex', (route) => {
+    seen.reindexCalls.push(new URL(route.request().url()).pathname)
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ started: true }),
+    })
+  })
 
   await page.route('**/api/accounts/*/indexing', (route) => {
     seen.indexingCalls.push(route.request().postDataJSON())
@@ -361,4 +376,94 @@ test('an estimate smaller than the count is not shown', async ({ page }) => {
 
   await expect(card.getByText('Indexing — 26,829 so far')).toBeVisible()
   await expect(card.getByText(/of about/)).toBeHidden()
+})
+
+/*
+ * Reported: an account showing 21,538 indexed for a mailbox whose inbox and
+ * trash had both been emptied — and pressing "Index now" repeatedly changed
+ * nothing.
+ *
+ * It could not. A backfill only adds, and an incremental pass only applies
+ * what `history.list` reports since its cursor; anything deleted while the
+ * first pass was still running, or after the cursor lapsed, is invisible to
+ * both. The index had no way to notice, and no way to be rebuilt.
+ */
+test.describe('an index that has drifted', () => {
+  test('says so when it holds more than the mailbox does', async ({ page }) => {
+    await stub(page, {
+      indexed: 21_538,
+      estimate: 2_100,
+      backfilling: false,
+      paused: false,
+      lastSyncedAt: '2026-08-24 12:00:00',
+      nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await expect(card.getByText(/holds more than the mailbox does/)).toBeVisible()
+  })
+
+  test('a healthy index says nothing of the sort', async ({ page }) => {
+    await stub(page, {
+      indexed: 2_050,
+      estimate: 2_100,
+      backfilling: false,
+      paused: false,
+      lastSyncedAt: '2026-08-24 12:00:00',
+      nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await expect(card.getByText(/holds more than the mailbox/)).toBeHidden()
+  })
+
+  /*
+   * Rebuild is a different request from "Index now", and the difference is
+   * the entire point — one advances the index, only the other can drop what
+   * is no longer there.
+   */
+  test('rebuilding is confirmed first, and is not a sync', async ({ page }) => {
+    const seen = await stub(page, {
+      indexed: 21_538,
+      estimate: 2_100,
+      backfilling: false,
+      paused: false,
+      lastSyncedAt: '2026-08-24 12:00:00',
+      nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await card.getByRole('button', { name: 'Rebuild' }).click()
+
+    const dialog = page.getByRole('alertdialog')
+    await expect(dialog).toContainText('Nothing in Gmail changes')
+    await dialog.getByRole('button', { name: 'Rebuild index' }).click()
+
+    await expect.poll(() => seen.reindexCalls).toEqual([
+      '/api/accounts/acc-1/reindex',
+    ])
+    expect(seen.syncCalls).toEqual([])
+  })
+
+  test('a cancelled rebuild touches nothing', async ({ page }) => {
+    const seen = await stub(page, {
+      indexed: 21_538,
+      estimate: 2_100,
+      backfilling: false,
+      paused: false,
+      lastSyncedAt: '2026-08-24 12:00:00',
+      nextRunAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      error: null,
+    })
+    const card = await openIndexing(page)
+
+    await card.getByRole('button', { name: 'Rebuild' }).click()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    await expect(page.getByRole('alertdialog')).toBeHidden()
+    expect(seen.reindexCalls).toEqual([])
+  })
 })

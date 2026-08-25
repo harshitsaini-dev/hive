@@ -403,9 +403,25 @@ async function incremental(
 
   await deleteIndexedMessages(accountId, removedIds)
 
+  /*
+   * The mailbox size is refreshed on every pass, not only at backfill time.
+   *
+   * It is one call, and it is what lets the UI notice an index that has
+   * drifted: the history feed cannot report what happened before its cursor,
+   * so an index can hold twenty thousand messages for a mailbox that now
+   * holds two, and nothing in the index itself would ever say so.
+   */
+  let mailboxSize: number | null = null
+  try {
+    mailboxSize = (await getProfile(accessToken)).messagesTotal || null
+  } catch {
+    // A missing size is a missing hint, not a failed sync.
+  }
+
   await updateSyncState(accountId, {
     historyId: changes.historyId ?? historyId,
     indexedCount: await countIndexed(accountId),
+    ...(mailboxSize === null ? {} : { totalEstimate: mailboxSize }),
   })
 
   return {
