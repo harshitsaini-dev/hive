@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from './api.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
-import { AlertIcon, ChartIcon } from './Icons.js'
+import { AlertIcon, ChartIcon, SearchIcon } from './Icons.js'
 
 /**
  * Control over the background index, beside the cleanup rules.
@@ -47,6 +47,8 @@ export function IndexingPanel({
   onChanged: () => Promise<void> | void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
+  /** Narrows a long list of mailboxes to the one being looked for. */
+  const [filter, setFilter] = useState('')
   /** The mailbox awaiting confirmation before its index is thrown away. */
   const [pendingRebuild, setPendingRebuild] = useState<ConnectedAccount | null>(
     null,
@@ -71,6 +73,13 @@ export function IndexingPanel({
     }
   }
 
+  const needle = filter.trim().toLowerCase()
+  const shown = needle
+    ? accounts.filter((account) =>
+        account.gmailAddress.toLowerCase().includes(needle),
+      )
+    : accounts
+
   return (
     <section className="card">
       <div className="card__head">
@@ -90,11 +99,33 @@ export function IndexingPanel({
         contents of a message.
       </p>
 
+      {/*
+        Only once the list is long enough to need it. A search box above four
+        rows is furniture; above forty it is the only way to reach one.
+      */}
+      {accounts.length > 5 && (
+        <div className="search-field indexing__find">
+          <SearchIcon size={15} />
+          <label htmlFor="indexing-search" className="sr-only">
+            Find a mailbox
+          </label>
+          <input
+            id="indexing-search"
+            type="search"
+            value={filter}
+            placeholder="Find a mailbox"
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </div>
+      )}
+
       {accounts.length === 0 ? (
         <p className="hint">Connect a mailbox and indexing starts on its own.</p>
+      ) : shown.length === 0 ? (
+        <p className="hint">No mailbox matches “{filter}”.</p>
       ) : (
         <ul className="indexing">
-          {accounts.map((account) => {
+          {shown.map((account) => {
             const sync = account.sync
             const done = sync && !sync.backfilling
 

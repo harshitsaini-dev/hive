@@ -532,3 +532,107 @@ test.describe('the rules page layout', () => {
     expect(widths[0]).toBeGreaterThan(832)
   })
 })
+
+/*
+ * Forty-one connected mailboxes. Both lists are alphabet soup at that size,
+ * and reaching one meant scrolling past forty.
+ */
+test.describe('finding one mailbox among many', () => {
+  async function manyAccounts(page: Page, count: number) {
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'u1', email: 'tester@example.test' },
+        }),
+      }),
+    )
+    await page.route('**/api/accounts', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          accounts: Array.from({ length: count }, (_, n) => ({
+            id: `a${n}`,
+            gmailAddress:
+              n === 7 ? 'rajmandir.nangloi@example.test' : `mailbox.${n}@example.test`,
+            status: 'active',
+            connectedAt: '2026-08-01T00:00:00.000Z',
+            lastSyncedAt: null,
+            senderName: null,
+            sync: {
+              indexed: 100 + n,
+              estimate: 200,
+              backfilling: false,
+              paused: false,
+              lastSyncedAt: null,
+              nextRunAt: new Date(Date.now() + 60_000).toISOString(),
+              error: null,
+            },
+          })),
+        }),
+      }),
+    )
+    await page.route('**/api/rules', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ rules: [] }),
+      }),
+    )
+    await page.route('**/api/messages?**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: [],
+          nextPageToken: null,
+          accounts: [],
+          skipped: [],
+        }),
+      }),
+    )
+  }
+
+  test('the indexing card can be searched', async ({ page }) => {
+    await manyAccounts(page, 41)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Rules' }).click()
+
+    const card = page.locator('.card', { hasText: 'Indexing' })
+    await expect(card.locator('.indexing li')).toHaveCount(41)
+
+    await card.getByPlaceholder('Find a mailbox').fill('nangloi')
+    await expect(card.locator('.indexing li')).toHaveCount(1)
+    await expect(card.getByText('rajmandir.nangloi@example.test')).toBeVisible()
+
+    // And says so rather than showing an empty box.
+    await card.getByPlaceholder('Find a mailbox').fill('nothing-like-this')
+    await expect(card.getByText(/No mailbox matches/)).toBeVisible()
+  })
+
+  test('the accounts page can be searched', async ({ page }) => {
+    await manyAccounts(page, 41)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Accounts' }).click()
+
+    await expect(page.locator('.accounts li')).toHaveCount(41)
+
+    await page.getByPlaceholder('Find a mailbox').fill('nangloi')
+    await expect(page.locator('.accounts li')).toHaveCount(1)
+  })
+
+  /*
+   * A search box above four rows is furniture. It appears when the list is
+   * long enough to need one.
+   */
+  test('a short list has no search box', async ({ page }) => {
+    await manyAccounts(page, 3)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Accounts' }).click()
+
+    await expect(page.locator('.accounts li')).toHaveCount(3)
+    await expect(page.getByPlaceholder('Find a mailbox')).toBeHidden()
+  })
+})

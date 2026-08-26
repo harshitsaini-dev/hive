@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ConnectedAccount } from '@hive/shared-types'
 import { api, ApiRequestError } from '../api.js'
 import { ConfirmDialog } from '../ConfirmDialog.js'
-import { AlertIcon, PlusIcon, TrashIcon } from '../Icons.js'
+import { AlertIcon, PlusIcon, SearchIcon, TrashIcon } from '../Icons.js'
 import { AccountListSkeleton } from '../Skeleton.js'
 
 export function AccountsView({
@@ -18,6 +18,8 @@ export function AccountsView({
 }) {
   const [connecting, setConnecting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  /** Narrows a long list of mailboxes to the one being looked for. */
+  const [filter, setFilter] = useState('')
   /** The account awaiting confirmation before it is disconnected. */
   const [pendingDisconnect, setPendingDisconnect] =
     useState<ConnectedAccount | null>(null)
@@ -54,6 +56,13 @@ export function AccountsView({
       )
     }
   }
+
+  const needle = filter.trim().toLowerCase()
+  const shown = needle
+    ? accounts.filter((account) =>
+        account.gmailAddress.toLowerCase().includes(needle),
+      )
+    : accounts
 
   return (
     <section className="view">
@@ -95,9 +104,33 @@ export function AccountsView({
           </p>
         )}
 
-        {!loading && accounts.length > 0 && (
+        {/*
+          Only once the list is long enough to need it — above four rows a
+          search box is furniture, above forty it is the only way to reach one.
+        */}
+        {!loading && accounts.length > 5 && (
+          <div className="search-field accounts__find">
+            <SearchIcon size={15} />
+            <label htmlFor="accounts-search" className="sr-only">
+              Find a mailbox
+            </label>
+            <input
+              id="accounts-search"
+              type="search"
+              value={filter}
+              placeholder="Find a mailbox"
+              onChange={(event) => setFilter(event.target.value)}
+            />
+          </div>
+        )}
+
+        {!loading && accounts.length > 0 && shown.length === 0 && (
+          <p className="hint">No mailbox matches “{filter}”.</p>
+        )}
+
+        {!loading && shown.length > 0 && (
           <ul className="accounts">
-            {accounts.map((account) => (
+            {shown.map((account) => (
               <li key={account.id}>
                 <div className="accounts__who">
                   <strong>{account.gmailAddress}</strong>

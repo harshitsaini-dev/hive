@@ -3807,3 +3807,10 @@ a.link-plain {
   max-width: none;
   min-width: 0;
 }
+
+/* Finding one mailbox among many, on Accounts and in the Indexing card. */
+.accounts__find,
+.indexing__find {
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
