@@ -624,6 +624,29 @@ test.describe('finding one mailbox among many', () => {
   })
 
   /*
+   * It rendered as a 256px-tall box with the input floating in the middle.
+   * `.search-field` carries `flex: 1 1 16rem`, written for the filter row
+   * where 16rem is a *width* — and both of these sit in a flex column, where
+   * the same value is read as a height.
+   */
+  test('the search box is a row, not a panel', async ({ page }) => {
+    await manyAccounts(page, 41)
+    await page.goto('/')
+
+    for (const [destination, selector] of [
+      ['Rules', '.indexing__find'],
+      ['Accounts', '.accounts__find'],
+    ] as const) {
+      await page.getByRole('button', { name: destination }).click()
+      const box = (await page.locator(selector).boundingBox())!
+
+      expect(box.height).toBeLessThan(60)
+      // And it spans the card rather than sitting in a corner of it.
+      expect(box.width).toBeGreaterThan(400)
+    }
+  })
+
+  /*
    * A search box above four rows is furniture. It appears when the list is
    * long enough to need one.
    */

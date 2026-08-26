@@ -3808,9 +3808,18 @@ a.link-plain {
   min-width: 0;
 }
 
-/* Finding one mailbox among many, on Accounts and in the Indexing card. */
+/*
+ * Finding one mailbox among many, on Accounts and in the Indexing card.
+ *
+ * `flex: none` is the load-bearing line. `.search-field` carries
+ * `flex: 1 1 16rem`, written for the filter row where it is a *width* — and
+ * these two sit in a flex **column**, where the same 16rem is read as a
+ * height. The box came out 256px tall with an input floating in the middle of
+ * it.
+ */
 .accounts__find,
 .indexing__find {
+  flex: none;
   width: 100%;
   margin-bottom: 0.25rem;
 }
