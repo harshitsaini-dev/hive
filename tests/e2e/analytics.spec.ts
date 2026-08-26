@@ -685,6 +685,53 @@ async function narrowTo(page: Page, panel: Locator, address: string) {
   await page.keyboard.press('Escape')
 }
 
+/*
+ * The picker replaced a row of chips, and inherited the two things the chips
+ * had already been taught: a count that reads against its own background, and
+ * a total that agrees with the headline it sits under.
+ */
+test.describe('the mailbox picker states its numbers honestly', () => {
+  test('the all-mailboxes figure is the headline total, not a sum', async ({
+    page,
+  }) => {
+    // A mailbox the run did not break out — so the parts total less than the
+    // whole, which is the case a sum would quietly get wrong.
+    await stub(page, { ...ANALYSIS, total: 120_000 })
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+
+    await panel.getByRole('button', { name: 'Mailboxes shown' }).click()
+    const all = page
+      .getByRole('dialog', { name: 'Mailboxes shown' })
+      .getByRole('button', { name: /All accounts/ })
+
+    await expect(all).toContainText('120,000')
+    await expect(all).not.toContainText('103,412')
+  })
+
+  test('the count reads against the row it sits on', async ({ page }) => {
+    await stub(page)
+    const panel = await openPanel(page)
+    await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
+    await panel.getByRole('button', { name: 'Mailboxes shown' }).click()
+
+    /*
+     * `.hint` is muted grey, which on the accent fill of the chosen row is
+     * close to invisible — the count has to borrow the row's own colour. The
+     * chips carried this fix; the picker had to be told again.
+     */
+    const colours = await page
+      .getByRole('dialog', { name: 'Mailboxes shown' })
+      .getByRole('button', { name: /All accounts/ })
+      .evaluate((el) => ({
+        row: getComputedStyle(el).color,
+        count: getComputedStyle(el.querySelector('.hint')!).color,
+      }))
+
+    expect(colours.count).toBe(colours.row)
+  })
+})
+
 test.describe('narrowing to one mailbox', () => {
   test('recounts the totals and the senders for that account', async ({
     page,

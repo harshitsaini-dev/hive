@@ -3400,10 +3400,13 @@ a.link-plain {
  * forty-one, which pushed the sender list below the fold on the panel whose
  * whole subject is the sender list.
  */
-.analytics__scope {
+.analytics__mailboxes {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  align-items: stretch;
+  width: 100%;
+  text-align: left;
 }
 
 .accounts__who {
@@ -3867,6 +3870,10 @@ a.link-plain {
 }
 
 .picker__all {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
   padding: 0.4rem 0.55rem;
   border: 0;
   border-radius: var(--radius-sm);
@@ -3882,6 +3889,17 @@ a.link-plain {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
+}
+
+/*
+ * `.hint` is muted grey, which on the accent fill is close to invisible. The
+ * count has to take the row's own colour — the same fix the mailbox chips
+ * carried before they became this picker.
+ */
+.picker__all[aria-pressed='true'] .hint,
+.picker__option .hint {
+  color: inherit;
+  opacity: 0.6;
 }
 
 .picker__list {

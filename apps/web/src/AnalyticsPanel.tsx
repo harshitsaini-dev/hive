@@ -874,7 +874,7 @@ export function AnalyticsPanel({
             "these five branches" is a question worth being able to ask.
           */}
           {analysis.accounts.length > 1 && (
-            <div className="analytics__scope">
+            <div className="analytics__mailboxes">
               <span className="formlabel">Mailboxes shown</span>
               <AccountPicker
                 label="Mailboxes shown"
@@ -886,6 +886,7 @@ export function AnalyticsPanel({
                   lastSyncedAt: null,
                 }))}
                 selected={onlyAccounts}
+                allCount={analysis.total}
                 counts={Object.fromEntries(
                   analysis.accounts.map((entry) => [
                     entry.accountId,

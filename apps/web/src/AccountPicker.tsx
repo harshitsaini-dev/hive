@@ -23,6 +23,7 @@ export function AccountPicker({
   /** Refuse an empty selection, where "all" is not a sensible answer. */
   requireOne = false,
   counts,
+  allCount,
 }: {
   accounts: ConnectedAccount[]
   /** Empty means every account. */
@@ -39,6 +40,15 @@ export function AccountPicker({
    * 1,588 is the row worth opening.
    */
   counts?: Record<string, number>
+  /**
+   * What "all accounts" holds, when that is known separately.
+   *
+   * Summing the per-mailbox counts would usually agree, and where it does not
+   * the picker would be quietly contradicting the headline figure directly
+   * above it — two totals disagreeing side by side is a bug whichever one is
+   * right.
+   */
+  allCount?: number
 }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
@@ -153,11 +163,15 @@ export function AccountPicker({
               onClick={() => onChange([])}
             >
               All accounts
-              {counts && (
+              {(allCount !== undefined || counts) && (
                 <span className="hint picker__count">
-                  {Object.values(counts)
-                    .reduce((sum, count) => sum + count, 0)
-                    .toLocaleString()}
+                  {(
+                    allCount ??
+                    Object.values(counts ?? {}).reduce(
+                      (sum, count) => sum + count,
+                      0,
+                    )
+                  ).toLocaleString()}
                 </span>
               )}
             </button>
