@@ -3393,39 +3393,17 @@ a.link-plain {
   align-items: center;
 }
 
-/* Mailbox chips: the same narrowing idea as the totals, one row down. */
-.analytics__mailboxes {
+/*
+ * Narrowing the results to some mailboxes.
+ *
+ * This was a row of chips — fine at three accounts, eight wrapped lines at
+ * forty-one, which pushed the sender list below the fold on the panel whose
+ * whole subject is the sender list.
+ */
+.analytics__scope {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.35rem;
-}
-
-.analytics__chip {
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-  padding: 0.3rem 0.6rem;
-  border: 0;
-  border-radius: 999px;
-  background: var(--surface-2);
-  box-shadow: none;
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.78rem;
-}
-
-.analytics__chip:active {
-  transform: none;
-}
-
-.analytics__chip[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-.analytics__chip[aria-pressed='true'] .hint {
-  color: inherit;
-  opacity: 0.75;
 }
 
 .accounts__who {

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 /**
  * The mailbox analysis panel.
@@ -672,6 +672,19 @@ test.describe('runs that outlive the page', () => {
  * in which mailbox, so narrowing to one account is arithmetic on work already
  * paid for rather than another scan.
  */
+/*
+ * The mailbox narrowing is a picker rather than a row of chips: at forty-one
+ * connected accounts the chips wrapped over eight lines and pushed the sender
+ * list, which is what the panel is for, below the fold.
+ */
+async function narrowTo(page: Page, panel: Locator, address: string) {
+  await panel.getByRole('button', { name: 'Mailboxes shown' }).click()
+  const picker = page.getByRole('dialog', { name: 'Mailboxes shown' })
+  await picker.getByPlaceholder('Find a mailbox').fill(address)
+  await picker.getByRole('checkbox').check()
+  await page.keyboard.press('Escape')
+}
+
 test.describe('narrowing to one mailbox', () => {
   test('recounts the totals and the senders for that account', async ({
     page,
@@ -683,7 +696,7 @@ test.describe('narrowing to one mailbox', () => {
     const cards = panel.locator('.analytics__stat')
     await expect(cards.nth(0)).toContainText('103,412')
 
-    await panel.getByRole('button', { name: /second@example.test/ }).click()
+    await narrowTo(page, panel, 'second@example.test')
 
     await expect(cards.nth(0)).toContainText('3,412')
     await expect(cards.nth(1)).toContainText('1,003')
@@ -700,7 +713,7 @@ test.describe('narrowing to one mailbox', () => {
     const seen = await stub(page)
     const panel = await openPanel(page)
     await panel.getByRole('button', { name: 'Analyse', exact: true }).click()
-    await panel.getByRole('button', { name: /second@example.test/ }).click()
+    await narrowTo(page, panel, 'second@example.test')
 
     await senderRows(panel).getByRole('button', { name: 'Clear' }).first().click()
     await page

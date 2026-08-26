@@ -22,6 +22,7 @@ export function AccountPicker({
   className,
   /** Refuse an empty selection, where "all" is not a sensible answer. */
   requireOne = false,
+  counts,
 }: {
   accounts: ConnectedAccount[]
   /** Empty means every account. */
@@ -30,6 +31,14 @@ export function AccountPicker({
   label?: string
   className?: string
   requireOne?: boolean
+  /**
+   * How much mail each mailbox holds, by account id.
+   *
+   * Where the picker narrows a result rather than setting a scope, the size
+   * of each mailbox is half the reason for choosing one — the row that says
+   * 1,588 is the row worth opening.
+   */
+  counts?: Record<string, number>
 }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
@@ -144,6 +153,13 @@ export function AccountPicker({
               onClick={() => onChange([])}
             >
               All accounts
+              {counts && (
+                <span className="hint picker__count">
+                  {Object.values(counts)
+                    .reduce((sum, count) => sum + count, 0)
+                    .toLocaleString()}
+                </span>
+              )}
             </button>
           )}
 
@@ -160,6 +176,11 @@ export function AccountPicker({
                       onChange={() => toggle(account.id)}
                     />
                     <span>{account.gmailAddress}</span>
+                    {counts && (
+                      <span className="hint picker__count">
+                        {(counts[account.id] ?? 0).toLocaleString()}
+                      </span>
+                    )}
                   </label>
                 </li>
               ))}

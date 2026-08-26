@@ -158,8 +158,8 @@ export function AnalyticsPanel({
     from?: string
     hasAttachment?: boolean
     raw?: string
-    /** Narrow the list to one mailbox, or '' for all of them. */
-    accountId?: string
+    /** Narrow the list to these mailboxes. Empty means all of them. */
+    accountIds?: string[]
   }) => void
 }) {
   /** Which mailboxes to measure. Empty means all of them. */
@@ -183,7 +183,16 @@ export function AnalyticsPanel({
   /** Which of the three totals the panel is currently narrowed to. */
   const [onlyWith, setOnlyWith] = useState<'all' | 'with' | 'without'>('all')
   /** Which mailbox the panel is narrowed to, or '' for all of them. */
-  const [onlyAccount, setOnlyAccount] = useState('')
+  /**
+   * Which mailboxes the results below are narrowed to. Empty means all of
+   * them, as everywhere else.
+   *
+   * This was a row of chips, which worked at three mailboxes and sprawled
+   * over eight lines at forty-one — a wall to read rather than a control to
+   * use, and it pushed the sender list, the actual subject of the panel, off
+   * the screen.
+   */
+  const [onlyAccounts, setOnlyAccounts] = useState<string[]>([])
   /** Widened past the folder on screen, when someone asks for the lot. */
   const [wholeMailbox, setWholeMailbox] = useState(false)
   /** Narrows the sender list by name or address, without another run. */
@@ -425,7 +434,7 @@ export function AnalyticsPanel({
      * figure of 65 that belongs to one account must not clear 200 across
      * three — the number on screen is the promise being kept.
      */
-    const scopeIds = onlyAccount ? [onlyAccount] : accountIds
+    const scopeIds = onlyAccounts.length > 0 ? onlyAccounts : accountIds
     const accountsToClear =
       scopeIds.length > 0
         ? accounts.filter((account) => scopeIds.includes(account.id))
@@ -534,12 +543,20 @@ export function AnalyticsPanel({
     .map((sender) => {
       // Narrowed to one mailbox, that mailbox's slice of the sender is the
       // whole story; otherwise it is the sender's total across all of them.
-      const scoped = onlyAccount
-        ? (sender.byAccount?.[onlyAccount] ?? {
-            count: 0,
-            withAttachment: 0,
-          })
-        : { count: sender.count, withAttachment: sender.withAttachment }
+      const scoped =
+        onlyAccounts.length > 0
+          ? onlyAccounts.reduce(
+              (sum, id) => {
+                const slice = sender.byAccount?.[id]
+                return {
+                  count: sum.count + (slice?.count ?? 0),
+                  withAttachment:
+                    sum.withAttachment + (slice?.withAttachment ?? 0),
+                }
+              },
+              { count: 0, withAttachment: 0 },
+            )
+          : { count: sender.count, withAttachment: sender.withAttachment }
 
       return {
         ...sender,
@@ -568,11 +585,17 @@ export function AnalyticsPanel({
    * per-account totals the run already recorded, so switching mailbox is
    * arithmetic rather than another scan.
    */
-  const scopedAccount = onlyAccount
-    ? analysis?.accounts.find((entry) => entry.accountId === onlyAccount)
-    : undefined
-  const scopedTotal = scopedAccount?.count ?? analysis?.total ?? 0
-  const scopedAttached = scopedAccount?.withAttachment ?? analysis?.withAttachment ?? 0
+  const scopedAccounts = (analysis?.accounts ?? []).filter((entry) =>
+    onlyAccounts.includes(entry.accountId),
+  )
+  const scopedTotal =
+    onlyAccounts.length > 0
+      ? scopedAccounts.reduce((sum, entry) => sum + entry.count, 0)
+      : (analysis?.total ?? 0)
+  const scopedAttached =
+    onlyAccounts.length > 0
+      ? scopedAccounts.reduce((sum, entry) => sum + entry.withAttachment, 0)
+      : (analysis?.withAttachment ?? 0)
 
   const chosen = shown.filter((sender) => selected.has(sender.address))
 
@@ -580,7 +603,12 @@ export function AnalyticsPanel({
   const viewPatch = {
     hasAttachment: onlyWith === 'with',
     raw: onlyWith === 'without' ? '-has:attachment' : '',
-    accountId: onlyAccount || (accountIds.length === 1 ? accountIds[0] : ''),
+    accountIds:
+      onlyAccounts.length > 0
+        ? onlyAccounts
+        : accountIds.length > 0
+          ? accountIds
+          : [],
   }
   const allTicked = shown.length > 0 && chosen.length === shown.length
   const top = shown[0]?.count ?? 0
@@ -839,44 +867,36 @@ export function AnalyticsPanel({
           </div>
 
           {/*
-            Mailboxes, narrowing the same list. Only worth drawing when a run
-            covered more than one — with a single account the chip would be a
-            button whose only state is the one already showing.
+            Mailboxes, narrowing the same list. A picker rather than the row
+            of chips this was: at forty-one connected accounts the chips
+            wrapped over eight lines and pushed the sender list — the thing
+            the panel is for — below the fold. It takes several now, because
+            "these five branches" is a question worth being able to ask.
           */}
           {analysis.accounts.length > 1 && (
-            <div
-              className="analytics__mailboxes"
-              role="group"
-              aria-label="Mailbox"
-            >
-              <button
-                type="button"
-                className="analytics__chip"
-                aria-pressed={onlyAccount === ''}
-                onClick={() => {
-                  setOnlyAccount('')
+            <div className="analytics__scope">
+              <span className="formlabel">Mailboxes shown</span>
+              <AccountPicker
+                label="Mailboxes shown"
+                accounts={analysis.accounts.map((entry) => ({
+                  id: entry.accountId,
+                  gmailAddress: entry.gmailAddress,
+                  status: 'active',
+                  connectedAt: '',
+                  lastSyncedAt: null,
+                }))}
+                selected={onlyAccounts}
+                counts={Object.fromEntries(
+                  analysis.accounts.map((entry) => [
+                    entry.accountId,
+                    entry.count,
+                  ]),
+                )}
+                onChange={(next) => {
+                  setOnlyAccounts(next)
                   setVisible(SENDER_PAGE)
                 }}
-              >
-                All connected
-                <span className="hint">{analysis.total.toLocaleString()}</span>
-              </button>
-
-              {analysis.accounts.map((entry) => (
-                <button
-                  key={entry.accountId}
-                  type="button"
-                  className="analytics__chip"
-                  aria-pressed={onlyAccount === entry.accountId}
-                  onClick={() => {
-                    setOnlyAccount(entry.accountId)
-                    setVisible(SENDER_PAGE)
-                  }}
-                >
-                  {entry.gmailAddress}
-                  <span className="hint">{entry.count.toLocaleString()}</span>
-                </button>
-              ))}
+              />
             </div>
           )}
 

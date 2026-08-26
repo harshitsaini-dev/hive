@@ -558,6 +558,56 @@ messagesRouter.get(
 )
 
 /**
+ * GET /messages/senders — who has written to these mailboxes.
+ *
+ * Declared above `GET /:id`, and it has to stay there: Express matches in
+ * order, so registered after it this path arrives as a request for a message
+ * whose id is the word "senders" — which fails at Gmail rather than here, and
+ * so reads in the UI as "could not read the sender list".
+ *
+ * Straight from the index, which is the only reason this can exist at all:
+ * the same list from Gmail would be a metadata read per message. Used by the
+ * cleanup-rule wizard, where "clear everything from these five senders" is
+ * the rule people actually want and typing five addresses from memory is how
+ * they get one of them wrong.
+ */
+messagesRouter.get(
+  '/senders',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const user = authed(req).user
+    const wanted = String(req.query.accountIds ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+
+    const accounts = (await listAccountsForOwner(user.id)).filter(
+      (account) => wanted.length === 0 || wanted.includes(account.id),
+    )
+
+    const totals = new Map<string, number>()
+    for (const account of accounts) {
+      const rows = await tallySendersFromIndex({
+        accountId: account.id,
+        folder: 'all',
+      })
+
+      for (const row of rows) {
+        const { address } = splitFrom(row.from_addr)
+        if (!address) continue
+        totals.set(address, (totals.get(address) ?? 0) + row.count)
+      }
+    }
+
+    res.json({
+      senders: [...totals]
+        .map(([address, count]) => ({ address, count }))
+        .sort((a, b) => b.count - a.count),
+    })
+  }),
+)
+
+/**
  * GET /messages/:id — one message, ready to render.
  *
  * Fetched live and never stored: the privacy claim is that bodies are not
@@ -748,51 +798,6 @@ messagesRouter.post(
         }
       }
     })()
-  }),
-)
-
-/**
- * GET /messages/senders — who has written to these mailboxes.
- *
- * Straight from the index, which is the only reason this can exist at all:
- * the same list from Gmail would be a metadata read per message. Used by the
- * cleanup-rule wizard, where "clear everything from these five senders" is
- * the rule people actually want and typing five addresses from memory is how
- * they get one of them wrong.
- */
-messagesRouter.get(
-  '/senders',
-  requireAuth,
-  asyncRoute(async (req, res) => {
-    const user = authed(req).user
-    const wanted = String(req.query.accountIds ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean)
-
-    const accounts = (await listAccountsForOwner(user.id)).filter(
-      (account) => wanted.length === 0 || wanted.includes(account.id),
-    )
-
-    const totals = new Map<string, number>()
-    for (const account of accounts) {
-      const rows = await tallySendersFromIndex({
-        accountId: account.id,
-        folder: 'all',
-      })
-
-      for (const row of rows) {
-        const { address } = splitFrom(row.from_addr)
-        if (!address) continue
-        totals.set(address, (totals.get(address) ?? 0) + row.count)
-      }
-    }
-
-    res.json({
-      senders: [...totals]
-        .map(([address, count]) => ({ address, count }))
-        .sort((a, b) => b.count - a.count),
-    })
   }),
 )
 
@@ -1248,3 +1253,43 @@ messagesRouter.post(
     res.status(201).json(result)
   }),
 )
+
+/*
+ * A fixed GET path declared after `/:id` is unreachable: Express matches in
+ * order and hands it over as a message id. The failure is quiet and happens
+ * at Gmail rather than here, so it surfaces as an unrelated error in the UI —
+ * `/senders` spent a release reading as "could not read the sender list".
+ *
+ * Cheaper to refuse to boot than to find it again.
+ */
+{
+  // GET only: `POST /trash` sits after `GET /:id` quite safely.
+  const paths = messagesRouter.stack
+    .map((layer) => layer.route as { path?: string; methods?: Record<string, boolean> } | undefined)
+    .filter((route) => route?.methods?.get)
+    .map((route) => route?.path)
+    .filter((path): path is string => typeof path === 'string')
+
+  const wildcard = paths.indexOf('/:id')
+  const shadowed =
+    wildcard === -1
+      ? []
+      : paths
+          .slice(wildcard + 1)
+          /*
+           * Single-segment only. `/:id` matches one segment, so a deeper
+           * fixed path like `/analytics/last` passes it by untouched.
+           */
+          .filter(
+            (path) =>
+              !path.includes(':') &&
+              path !== '/' &&
+              path.slice(1).split('/').length === 1,
+          )
+
+  if (shadowed.length > 0) {
+    throw new Error(
+      `These routes are shadowed by GET /messages/:id — declare them above it: ${shadowed.join(', ')}`,
+    )
+  }
+}

@@ -1203,15 +1203,13 @@ export function MailView({
                * that is a single Gmail query — one page of results to read
                * rather than one per sender.
                */
-              const { accountId: scopeId, ...filterPatch } = patch
+              const { accountIds: scopeIds, ...filterPatch } = patch
               const next = { ...EMPTY_FILTERS, ...filterPatch }
               setFilters(next)
               setApplied(next)
-              // The panel's mailbox chip narrows the list as well; without
+              // The panel's mailbox picker narrows the list as well; without
               // this, viewing one account's senders lists every account.
-              if (scopeId !== undefined) {
-                setAccountIds(scopeId ? [scopeId] : [])
-              }
+              if (scopeIds !== undefined) setAccountIds(scopeIds)
               /*
                * Viewing a sender from the analysis reaches every folder on
                * purpose: the analysis counted the mailbox, so showing only
