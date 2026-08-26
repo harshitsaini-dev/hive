@@ -90,6 +90,8 @@ export function AccountPicker({
   }, [accounts, filter])
 
   const chosen = new Set(selected)
+  const everyChosen =
+    accounts.length > 0 && accounts.every((account) => chosen.has(account.id))
 
   /*
    * What the closed control says.
@@ -106,7 +108,9 @@ export function AccountPicker({
       : chosen.size === 1
         ? (accounts.find((account) => chosen.has(account.id))?.gmailAddress ??
           '1 account')
-        : `${chosen.size} accounts`
+        : everyChosen
+          ? `All ${accounts.length} accounts`
+          : `${chosen.size} accounts`
 
   function toggle(id: string) {
     const next = new Set(chosen)
@@ -151,9 +155,8 @@ export function AccountPicker({
           </div>
 
           {/*
-            "All" is the absence of a choice rather than a forty-tick
-            selection, so clearing is how you say it — and it is one click
-            from anywhere in the list.
+            Where "all" is the absence of a choice, clearing is how you say it
+            — one click from anywhere in the list, rather than forty ticks.
           */}
           {!requireOne && (
             <button
@@ -174,6 +177,31 @@ export function AccountPicker({
                   ).toLocaleString()}
                 </span>
               )}
+            </button>
+          )}
+
+          {/*
+            Where it is not, "all" has to be forty actual ticks — so here is
+            the one button that does them. Without it a rule for every mailbox
+            could only be built by hand, forty times, which is exactly the
+            work this control exists to remove.
+
+            It turns into its own undo once everything is on, because a list
+            with every box ticked and no way back is a trap.
+          */}
+          {requireOne && accounts.length > 1 && (
+            <button
+              type="button"
+              className="picker__all"
+              onClick={() =>
+                onChange(
+                  everyChosen ? [] : accounts.map((account) => account.id),
+                )
+              }
+            >
+              {everyChosen
+                ? 'Clear the selection'
+                : `Select all ${accounts.length}`}
             </button>
           )}
 

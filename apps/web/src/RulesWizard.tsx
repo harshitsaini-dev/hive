@@ -86,6 +86,13 @@ export function RulesWizard({
       : `${chosen.length} mailboxes`
 
   const hasCondition = hasAnyFilter(filters) || senders.length > 0
+  /*
+   * Unticking every mailbox is reachable now that there is a button which
+   * ticks them all. Without this the wizard would walk through the whole
+   * flow and then save nothing at all, silently — the loop below simply has
+   * no accounts to run over.
+   */
+  const hasMailbox = chosen.length > 0
 
   function restart() {
     setStep('what')
@@ -98,6 +105,11 @@ export function RulesWizard({
 
   /** Step two: ask the server what this actually matches, right now. */
   async function check() {
+    if (!hasMailbox) {
+      setError('Choose at least one mailbox for this rule to run in.')
+      return
+    }
+
     setBusy(true)
     setError(null)
 
@@ -210,6 +222,12 @@ export function RulesWizard({
             <p className="hint">
               Choose at least one filter or sender. A rule with nothing set
               would match every message in the mailbox.
+            </p>
+          )}
+
+          {!hasMailbox && (
+            <p className="hint">
+              Choose at least one mailbox for this rule to run in.
             </p>
           )}
         </>

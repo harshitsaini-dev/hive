@@ -210,6 +210,23 @@ test.describe('picking mailboxes', () => {
     await expect.poll(() => chosenCount(seen)).toBe(5)
   })
 
+  /*
+   * The mail filters keep the other idiom: no selection means all of them, so
+   * a button that ticks forty boxes would be a slower way of saying nothing.
+   */
+  test('where "all" is the absence of a choice, there is nothing to tick', async ({
+    page,
+  }) => {
+    await stub(page)
+    await page.goto('/')
+
+    await page.getByRole('button', { name: 'Accounts to search' }).click()
+    const panel = page.getByRole('dialog', { name: 'Accounts to search' })
+
+    await expect(panel.getByRole('button', { name: 'All accounts' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: /Select all/ })).toBeHidden()
+  })
+
   test('the analysis is scoped by the same picker', async ({ page }) => {
     const seen = await stub(page)
     await page.goto('/')
@@ -278,6 +295,74 @@ test.describe('cleanup rules across mailboxes and senders', () => {
       // Rules trash. They never delete, whatever they were built from.
       expect(JSON.stringify(rule)).not.toContain('delete')
     }
+  })
+
+  /*
+   * "All" cannot be the absence of a choice here — a rule row holds an
+   * account — so every mailbox has to be forty actual ticks. This is the one
+   * button that does them, and without it a rule for every mailbox could only
+   * be built by hand, once per mailbox, which is the work the picker exists to
+   * remove.
+   */
+  test('every mailbox can be taken in one click', async ({ page }) => {
+    const seen = await stub(page)
+    const wizard = await openRules(page)
+
+    await wizard
+      .getByRole('button', { name: 'Mailboxes this rule covers' })
+      .click()
+    const picker = page.getByRole('dialog', {
+      name: 'Mailboxes this rule covers',
+    })
+    await picker.getByRole('button', { name: 'Select all 24' }).click()
+    await page.keyboard.press('Escape')
+
+    await expect(
+      wizard.getByRole('button', { name: 'Mailboxes this rule covers' }),
+    ).toContainText('All 24 accounts')
+
+    await wizard.getByRole('button', { name: 'Senders this rule covers' }).click()
+    await page
+      .getByRole('dialog', { name: 'Senders this rule covers' })
+      .getByText('billing@vendor.test')
+      .click()
+    await page.keyboard.press('Escape')
+
+    await wizard.getByRole('button', { name: 'Check what this matches' }).click()
+    await wizard.getByRole('button', { name: /Looks right/ }).click()
+    await wizard.getByRole('button', { name: 'Save rule' }).click()
+
+    await expect.poll(() => seen.rules.length, { timeout: 15_000 }).toBe(24)
+  })
+
+  /*
+   * A list with every box ticked and no way back is a trap, so the same
+   * button undoes itself — and the wizard then has to say what is missing
+   * rather than walking the whole flow and saving nothing.
+   */
+  test('and given back, which the wizard then refuses to save', async ({
+    page,
+  }) => {
+    const seen = await stub(page)
+    const wizard = await openRules(page)
+
+    await wizard
+      .getByRole('button', { name: 'Mailboxes this rule covers' })
+      .click()
+    const picker = page.getByRole('dialog', {
+      name: 'Mailboxes this rule covers',
+    })
+    await picker.getByRole('button', { name: 'Select all 24' }).click()
+    await picker.getByRole('button', { name: 'Clear the selection' }).click()
+    await page.keyboard.press('Escape')
+
+    await expect(
+      wizard.getByText('Choose at least one mailbox'),
+    ).toBeVisible()
+
+    await wizard.getByRole('button', { name: 'Check what this matches' }).click()
+    await expect(wizard.getByRole('alert')).toContainText('at least one mailbox')
+    expect(seen.rules).toHaveLength(0)
   })
 
   test('the sender list is asked for the chosen mailboxes', async ({ page }) => {
