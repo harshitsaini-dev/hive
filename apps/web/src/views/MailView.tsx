@@ -19,6 +19,7 @@ import {
   toStructured,
   type Filters,
 } from '../MailFilters.js'
+import { AccountPicker } from '../AccountPicker.js'
 import { AnalyticsPanel } from '../AnalyticsPanel.js'
 import type { MailboxView } from '../AppShell.js'
 import { MessageReader } from '../MessageReader.js'
@@ -118,7 +119,8 @@ export function MailView({
    */
   everywhere?: boolean
 }) {
-  const [accountId, setAccountId] = useState('')
+  /** Which mailboxes to search. Empty means all of them. */
+  const [accountIds, setAccountIds] = useState<string[]>([])
   const [filters, setFilters] = useState<Filters>(initialFilters ?? EMPTY_FILTERS)
   const [applied, setApplied] = useState<Filters>(initialFilters ?? EMPTY_FILTERS)
   const [load, setLoad] = useState<Load>(EMPTY_LOAD)
@@ -242,7 +244,7 @@ export function MailView({
     try {
       const result = await api.searchMessages({
         q: query,
-        accountId: accountId || undefined,
+        accountIds,
         pageSize: PAGE_SIZE,
         structured: JSON.parse(structuredJson) ?? undefined,
       })
@@ -275,7 +277,9 @@ export function MailView({
           caught instanceof ApiRequestError ? caught.message : 'Could not search.',
       })
     }
-  }, [query, accountId, accountsLoading, structuredJson])
+    // Joined, so a new array with the same ids does not re-run the search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, accountIds.join(','), accountsLoading, structuredJson])
 
   useEffect(() => {
     void refresh()
@@ -291,7 +295,7 @@ export function MailView({
     try {
       const result = await api.searchMessages({
         q: query,
-        accountId: accountId || undefined,
+        accountIds,
         pageSize: PAGE_SIZE,
         structured: JSON.parse(structuredJson) ?? undefined,
         ...(load.nextOffset !== null
@@ -332,7 +336,14 @@ export function MailView({
     } finally {
       setLoadingMore(false)
     }
-  }, [load.nextPageToken, load.nextOffset, query, accountId, structuredJson])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    load.nextPageToken,
+    load.nextOffset,
+    query,
+    accountIds.join(','),
+    structuredJson,
+  ])
 
   /*
    * The real total, fetched alongside the pages rather than after them. Only
@@ -346,9 +357,7 @@ export function MailView({
     if (load.loading || !load.nextPageToken || total) return
 
     let cancelled = false
-    const targets = accountId
-      ? accounts.filter((account) => account.id === accountId)
-      : accounts
+    const targets = pickedAccounts()
 
     void Promise.all(
       targets.map((account) => api.resolveQuery(account.id, query)),
@@ -366,7 +375,16 @@ export function MailView({
     return () => {
       cancelled = true
     }
-  }, [load.loading, load.nextPageToken, load.total, total, query, accountId, accounts])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    load.loading,
+    load.nextPageToken,
+    load.total,
+    total,
+    query,
+    accountIds.join(','),
+    accounts,
+  ])
 
   /*
    * Selecting more than one thing, the way every file manager does.
@@ -386,6 +404,12 @@ export function MailView({
    */
   const anchor = useRef<number | null>(null)
   const dragAdds = useRef(true)
+
+  /** The mailboxes an action should touch. Empty selection means all. */
+  const pickedAccounts = () =>
+    accountIds.length === 0
+      ? accounts
+      : accounts.filter((account) => accountIds.includes(account.id))
 
   const idAt = (index: number) => load.messages[index]?.gmailMessageId
 
@@ -562,9 +586,7 @@ export function MailView({
     setNotice(null)
 
     try {
-      const targets = accountId
-        ? accounts.filter((account) => account.id === accountId)
-        : accounts
+      const targets = pickedAccounts()
 
       const resolved = await Promise.all(
         targets.map(async (account) => ({
@@ -775,18 +797,16 @@ export function MailView({
 
         {accounts.length > 1 && (
           <div className="filters__row">
-            <Select
-              id="account"
-              label="Account"
-              value={accountId}
-              options={[
-                { value: '', label: 'All accounts' },
-                ...accounts.map((account) => ({
-                  value: account.id,
-                  label: account.gmailAddress,
-                })),
-              ]}
-              onChange={setAccountId}
+            {/*
+              More than one at a time, and searchable. A plain dropdown was
+              fine at three mailboxes and useless at forty — the question is
+              usually "these five", and that could not be asked at all.
+            */}
+            <AccountPicker
+              label="Accounts to search"
+              accounts={accounts}
+              selected={accountIds}
+              onChange={setAccountIds}
             />
           </div>
         )}
@@ -1189,7 +1209,9 @@ export function MailView({
               setApplied(next)
               // The panel's mailbox chip narrows the list as well; without
               // this, viewing one account's senders lists every account.
-              if (scopeId !== undefined) setAccountId(scopeId)
+              if (scopeId !== undefined) {
+                setAccountIds(scopeId ? [scopeId] : [])
+              }
               /*
                * Viewing a sender from the analysis reaches every folder on
                * purpose: the analysis counted the mailbox, so showing only

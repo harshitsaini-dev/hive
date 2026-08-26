@@ -266,10 +266,11 @@ test.describe('mailbox analysis', () => {
     const seen = await stub(page)
     const panel = await openPanel(page)
 
-    await panel
-      .getByRole('button', { name: 'Account to analyse', exact: true })
-      .click()
-    await panel.getByRole('option', { name: 'second@example.test' }).click()
+    await panel.getByRole('button', { name: 'Accounts to analyse' }).click()
+    const picker = page.getByRole('dialog', { name: 'Accounts to analyse' })
+    await picker.getByPlaceholder('Find a mailbox').fill('second@')
+    await picker.getByRole('checkbox').check()
+    await page.keyboard.press('Escape')
 
     await panel.getByRole('button', { name: 'Age', exact: true }).click()
     await panel.getByRole('option', { name: 'Older than a year' }).click()
@@ -280,7 +281,8 @@ test.describe('mailbox analysis', () => {
     )
 
     expect(seen.analyseBodies.at(-1)).toMatchObject({
-      accountId: 'acc-2',
+      // A list now — several mailboxes can be analysed as one.
+      accountIds: ['acc-2'],
       query: 'in:inbox older_than:1y',
       scanLimit: 5000,
     })

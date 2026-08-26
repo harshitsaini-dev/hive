@@ -510,26 +510,32 @@ test.describe('the rules page layout', () => {
     )
   }
 
-  test('rules come before the index, at the same width', async ({ page }) => {
+  test('rules sit beside the index, each card one width', async ({ page }) => {
     await manyAccounts(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/')
     await page.getByRole('button', { name: 'Rules' }).click()
     await page.waitForSelector('.indexing')
 
-    const rules = (await page.locator('.rules').boundingBox())!
-    const index = (await page.locator('.indexing').boundingBox())!
-    const cards = page.locator('.app__main .card')
+    const rules = (await page.locator('.rulesgrid__rules').boundingBox())!
+    const index = (await page.locator('.rulesgrid__index').boundingBox())!
 
-    // The short card, and the reason anyone came here, is on top.
-    expect(rules.y).toBeLessThan(index.y)
+    /*
+     * Side by side now, rules on the right. Stacked, whichever card went
+     * second was effectively hidden: the index draws a row per connected
+     * mailbox and forty of those bury anything below them.
+     */
+    expect(rules.x).toBeGreaterThan(index.x)
+    expect(Math.abs(rules.y - index.y)).toBeLessThan(20)
 
-    // Two cards, one width. It was 672 against 832, because the index card
-    // was sized by its own widest row rather than by the page.
-    const widths = await cards.evaluateAll((els) =>
-      els.map((el) => Math.round(el.getBoundingClientRect().width)),
-    )
+    // One width each, still. The index card used to size itself by its own
+    // widest row rather than by its column.
+    const widths = await page
+      .locator('.app__main .card')
+      .evaluateAll((els) =>
+        els.map((el) => Math.round(el.getBoundingClientRect().width)),
+      )
     expect(new Set(widths).size).toBe(1)
-    expect(widths[0]).toBeGreaterThan(832)
   })
 })
 

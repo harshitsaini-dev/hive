@@ -17,11 +17,14 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
 - **Gmail connection** — full OAuth round trip with CSRF state, tokens
   encrypted at rest, `reauth_required` handling, disconnect.
 - **Mailbox** — unified search across accounts using Gmail's own syntax,
-  multi-select, bulk move to Trash.
+  multi-select, bulk move to Trash. Which mailboxes a search covers is chosen
+  from a searchable multi-select; choosing none means all of them.
 - **Trash bin** — browse, restore, and permanently delete behind a
   type-to-confirm dialog.
 - **Cleanup rules** — saved searches that trash on a manual/daily/weekly
-  schedule, run by an hourly cron pass.
+  schedule, run by an hourly cron pass. A rule can be built for several
+  mailboxes at once (saved as one rule apiece) and for several senders picked
+  from the index rather than typed.
 - **Compose** — send from any connected identity.
 - **Legal** — `/privacy` and `/terms`, written to match what the code does.
 - **Hardening** — API rate limiting; bodies never persisted; audit trail for
@@ -40,7 +43,7 @@ verification — is deliberately deferred; see the cost note in ADR 0002.
   skeleton loading, custom 404/offline/500/403 screens, installable PWA,
   custom date picker, themed scrollbars, in-app confirmation dialogs.
 
-140 Playwright tests, green headed and headless — including a mobile suite
+192 Playwright tests, green headed and headless — including a mobile suite
 that emulates a phone properly, after the discovery that the previous one
 emulated touch without a touch pointer and so tested none of the rules it was
 written for. CI green.

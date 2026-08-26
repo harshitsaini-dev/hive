@@ -93,8 +93,8 @@ export function splitFrom(from: string): { name: string; address: string } {
 
 export async function runAnalysis(options: {
   userId: string
-  /** One account, or every connected one when null. */
-  accountId: string | null
+  /** Several accounts, or every connected one when empty. */
+  accountIds: string[]
   query: string
   scanLimit: number
   /** The UI control values behind the query. Opaque here; stored verbatim. */
@@ -111,11 +111,11 @@ export async function runAnalysis(options: {
   /** Reports how many headers have been read, and how many there are to read. */
   onProgress?: (done: number, total: number) => void
 }): Promise<MailboxAnalysis> {
-  const { userId, accountId, query, scanLimit, filters, scope, onProgress } =
+  const { userId, accountIds, query, scanLimit, filters, scope, onProgress } =
     options
 
   const accounts = (await listAccountsForOwner(userId)).filter(
-    (account) => !accountId || account.id === accountId,
+    (account) => accountIds.length === 0 || accountIds.includes(account.id),
   )
   if (accounts.length === 0) throw new Error('No matching account')
 
@@ -285,7 +285,15 @@ export async function runAnalysis(options: {
    * database; see the migration for the full note.
    */
   try {
-    await saveAnalysisRun({ userId, accountId, query, filters, result })
+    await saveAnalysisRun({
+    userId,
+    // One id when exactly one was chosen; the row holds a single account and
+    // the filters carry the full list either way.
+    accountId: accountIds.length === 1 ? (accountIds[0] ?? null) : null,
+    query,
+    filters,
+    result,
+  })
   } catch (error) {
     /*
      * The run succeeded; only remembering it did not. Throwing here would

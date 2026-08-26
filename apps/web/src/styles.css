@@ -3793,6 +3793,11 @@ a.link-plain {
   max-width: 60rem;
 }
 
+/* Two columns need more room than a single stack of forms. */
+.view--rules {
+  max-width: 82rem;
+}
+
 /*
  * A card takes the width of the page and no more.
  *
@@ -3822,4 +3827,174 @@ a.link-plain {
   flex: none;
   width: 100%;
   margin-bottom: 0.25rem;
+}
+
+/* ---- account picker ------------------------------------------------------ */
+
+.picker {
+  position: relative;
+  display: inline-block;
+}
+
+.picker__button {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pressed);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+}
+
+.picker__button:active:not(:disabled) {
+  transform: none;
+}
+
+.picker__button svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.picker__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: min(22rem, 88vw);
+  padding: 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+/* The field is a row here, not a column item — see the note on `.search-field`. */
+.picker__search {
+  flex: none;
+}
+
+.picker__all {
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.picker__all[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 16rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.picker__option {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.picker__option:hover {
+  background: var(--surface-2);
+}
+
+.picker__option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__empty {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.picker__foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+}
+
+.picker__count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- rules page: two columns --------------------------------------------- */
+
+/*
+ * Rules on the right, the index on the left.
+ *
+ * Stacked, whichever went second was effectively hidden: the index draws a
+ * row per connected mailbox and forty of those bury anything below them. Two
+ * columns give the long list somewhere to be long without pushing the short
+ * one off the screen.
+ */
+.rulesgrid {
+  display: grid;
+  gap: 1.25rem;
+  align-items: start;
+  grid-template-columns: 1fr 1fr;
+}
+
+.rulesgrid > div {
+  min-width: 0;
+}
+
+/* Each column scrolls the page rather than growing it without limit. */
+.rulesgrid__index .indexing {
+  max-height: 34rem;
+  overflow-y: auto;
+}
+
+@media (max-width: 68rem) {
+  /*
+   * One column below this, and rules first — on a narrow screen the top of
+   * the page is the only place anyone looks, and the index is the longer of
+   * the two.
+   */
+  .rulesgrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rulesgrid__rules {
+    order: -1;
+  }
+
+  .rulesgrid__index .indexing {
+    max-height: none;
+  }
 }

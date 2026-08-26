@@ -220,6 +220,8 @@ export const api = {
 
   searchMessages: (options: {
     q?: string
+    /** Several mailboxes. Empty means every connected account. */
+    accountIds?: string[]
     accountId?: string
     pageSize?: number
     pageToken?: string
@@ -239,6 +241,9 @@ export const api = {
     const params = new URLSearchParams()
     if (options.q) params.set('q', options.q)
     if (options.accountId) params.set('accountId', options.accountId)
+    if (options.accountIds?.length) {
+      params.set('accountIds', options.accountIds.join(','))
+    }
     if (options.pageSize) params.set('pageSize', String(options.pageSize))
     if (options.pageToken) params.set('pageToken', options.pageToken)
     if (options.offset) params.set('offset', String(options.offset))
@@ -317,7 +322,8 @@ export const api = {
    * per message, so a large mailbox takes minutes.
    */
   analyze: (options: {
-    accountId?: string
+    /** Several mailboxes. Empty means every connected account. */
+    accountIds?: string[]
     query: string
     scanLimit: number
     filters: Record<string, string>
@@ -342,6 +348,20 @@ export const api = {
     request<{ run: SavedAnalysis | null; activeJobId: string | null }>(
       '/messages/analytics/last',
     ),
+
+  /**
+   * Who has written to these mailboxes, from the local index.
+   *
+   * Cheap only because it is local: the same list from Gmail would be a
+   * metadata read per message.
+   */
+  listSenders: (accountIds: string[]) => {
+    const params = new URLSearchParams()
+    if (accountIds.length) params.set('accountIds', accountIds.join(','))
+    return request<{ senders: { address: string; count: number }[] }>(
+      `/messages/senders?${params.toString()}`,
+    )
+  },
 
   /** Advances one mailbox's index by a single pass. Returns straight away. */
   syncAccount: (accountId: string) =>

@@ -10,6 +10,7 @@ import {
   listAccountsForOwner,
   listSyncStates,
   searchIndex,
+  tallySendersFromIndex,
   writeAuditEntry,
   type AccountRow,
 } from '@hive/db'
@@ -32,7 +33,7 @@ import {
   untrashMessages,
 } from '@hive/gmail-client'
 import { asyncRoute, badRequest, HttpError, notFound } from '../errors.js'
-import { MAX_SCAN, runAnalysis } from '../analysis.js'
+import { MAX_SCAN, runAnalysis, splitFrom } from '../analysis.js'
 import { freshenIndex } from '../sync.js'
 import {
   advanceJob,
@@ -172,6 +173,15 @@ const structuredSchema = z.object({
 
 const searchSchema = z.object({
   accountId: z.string().min(1).optional(),
+  /**
+   * Several mailboxes at once, comma separated.
+   *
+   * Alongside `accountId` rather than replacing it: one account is still the
+   * common case and a single id in a URL is easier to read in a log than a
+   * list of one. Empty or absent means every connected account, which is the
+   * convention the rest of the app already uses.
+   */
+  accountIds: z.string().max(2000).optional(),
   q: z.string().max(500).optional(),
   /** JSON, because this arrives on a GET. Absent means "use Gmail". */
   structured: z.string().max(1000).optional(),
@@ -424,14 +434,24 @@ messagesRouter.get(
     if (!parsed.success) throw badRequest('Invalid search')
 
     const { user } = authed(req)
-    const { accountId, q, structured, offset, pageSize, pageToken } = parsed.data
+    const { accountId, accountIds, q, structured, offset, pageSize, pageToken } =
+      parsed.data
 
     const accounts = await listAccountsForOwner(user.id)
-    const targets = accountId
-      ? accounts.filter((account) => account.id === accountId)
-      : accounts
+    const wantedIds = new Set(
+      [accountId, ...(accountIds?.split(',') ?? [])]
+        .map((id) => id?.trim())
+        .filter((id): id is string => !!id),
+    )
 
-    if (accountId && targets.length === 0) throw badRequest('Unknown account')
+    const targets =
+      wantedIds.size > 0
+        ? accounts.filter((account) => wantedIds.has(account.id))
+        : accounts
+
+    if (wantedIds.size > 0 && targets.length === 0) {
+      throw badRequest('Unknown account')
+    }
 
     // Accounts needing reconnection are skipped rather than failing the whole
     // search — one stale account must not hide the others' results.
@@ -659,7 +679,8 @@ messagesRouter.post(
 
 /** Analysis lives in its own module; two callers need it. See analysis.ts. */
 const analyticsSchema = z.object({
-  accountId: z.string().min(1).optional(),
+  /** Several mailboxes, comma separated. Empty means every one of them. */
+  accountIds: z.array(z.string().min(1)).default([]),
   query: z.string().max(500),
   scanLimit: z.number().int().min(100).max(MAX_SCAN),
   /**
@@ -687,7 +708,7 @@ messagesRouter.post(
     const parsed = analyticsSchema.safeParse(req.body)
     if (!parsed.success) throw badRequest('A query and scanLimit are required')
 
-    const { accountId, query, scanLimit, filters, scope } = parsed.data
+    const { accountIds, query, scanLimit, filters, scope } = parsed.data
     const user = authed(req).user
 
     // One at a time per user. Two concurrent scans would race each other for
@@ -706,7 +727,7 @@ messagesRouter.post(
       try {
         const result = await runAnalysis({
           userId: user.id,
-          accountId: accountId ?? null,
+          accountIds,
           query,
           scanLimit,
           filters,
@@ -727,6 +748,51 @@ messagesRouter.post(
         }
       }
     })()
+  }),
+)
+
+/**
+ * GET /messages/senders — who has written to these mailboxes.
+ *
+ * Straight from the index, which is the only reason this can exist at all:
+ * the same list from Gmail would be a metadata read per message. Used by the
+ * cleanup-rule wizard, where "clear everything from these five senders" is
+ * the rule people actually want and typing five addresses from memory is how
+ * they get one of them wrong.
+ */
+messagesRouter.get(
+  '/senders',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const user = authed(req).user
+    const wanted = String(req.query.accountIds ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+
+    const accounts = (await listAccountsForOwner(user.id)).filter(
+      (account) => wanted.length === 0 || wanted.includes(account.id),
+    )
+
+    const totals = new Map<string, number>()
+    for (const account of accounts) {
+      const rows = await tallySendersFromIndex({
+        accountId: account.id,
+        folder: 'all',
+      })
+
+      for (const row of rows) {
+        const { address } = splitFrom(row.from_addr)
+        if (!address) continue
+        totals.set(address, (totals.get(address) ?? 0) + row.count)
+      }
+    }
+
+    res.json({
+      senders: [...totals]
+        .map(([address, count]) => ({ address, count }))
+        .sort((a, b) => b.count - a.count),
+    })
   }),
 )
 

@@ -247,13 +247,19 @@ test.describe('several mailboxes', () => {
 
     await expect(page.getByText('(3 shown)')).toBeVisible()
 
-    // exact, or the sidebar's 'Accounts' nav item matches too.
-    await page.getByRole('button', { name: 'Account', exact: true }).click()
-    await page.getByRole('option', { name: 'second@example.test' }).click()
+    /*
+     * A searchable multi-select rather than a dropdown: at forty mailboxes a
+     * plain list is one you scroll blindly, and the question is usually
+     * "these five". One is still one, and it still narrows the search.
+     */
+    await page.getByRole('button', { name: 'Accounts to search' }).click()
+    const picker = page.getByRole('dialog', { name: 'Accounts to search' })
+    await picker.getByPlaceholder('Find a mailbox').fill('second@')
+    await picker.getByRole('checkbox').check()
 
     await expect
       .poll(() => seen.searchUrls.at(-1) ?? '')
-      .toContain('accountId=acc-2')
+      .toContain('accountIds=acc-2')
   })
 })
 

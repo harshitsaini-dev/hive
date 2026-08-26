@@ -9,7 +9,8 @@ import {
   MailFilters,
   type Filters,
 } from './MailFilters.js'
-import { Select } from './Select.js'
+import { AccountPicker } from './AccountPicker.js'
+import { SenderPicker } from './SenderPicker.js'
 
 /**
  * Building a cleanup rule, one decision at a time.
@@ -40,7 +41,19 @@ export function RulesWizard({
   onCreated: () => Promise<void> | void
 }) {
   const [step, setStep] = useState<Step>('what')
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  /**
+   * The mailboxes this rule covers.
+   *
+   * A rule row holds one account, so choosing several saves several rules —
+   * one per mailbox, each running on its own. That is honest about what
+   * happens and it keeps the runner, the audit trail and "pause this one"
+   * exactly as they were.
+   */
+  const [accountIds, setAccountIds] = useState<string[]>(
+    accounts[0] ? [accounts[0].id] : [],
+  )
+  /** Senders this rule should clear, chosen rather than typed. */
+  const [senders, setSenders] = useState<string[]>([])
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
   const [schedule, setSchedule] =
     useState<(typeof SCHEDULES)[number]['value']>('manual')
@@ -50,13 +63,34 @@ export function RulesWizard({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const query = buildQuery(filters)
+  /*
+   * Senders join the filters as one `from:(a OR b)` clause rather than as
+   * separate rules: it is one query Gmail can answer, and one number the
+   * check step can show.
+   */
+  const query = [
+    buildQuery(filters),
+    senders.length === 1
+      ? `from:${senders[0]}`
+      : senders.length > 1
+        ? `from:(${senders.join(' OR ')})`
+        : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const chosen = accounts.filter((account) => accountIds.includes(account.id))
   const accountName =
-    accounts.find((account) => account.id === accountId)?.gmailAddress ?? ''
+    chosen.length === 1
+      ? (chosen[0]?.gmailAddress ?? '')
+      : `${chosen.length} mailboxes`
+
+  const hasCondition = hasAnyFilter(filters) || senders.length > 0
 
   function restart() {
     setStep('what')
     setFilters(EMPTY_FILTERS)
+    setSenders([])
     setSchedule('manual')
     setMatch(null)
     setError(null)
@@ -70,8 +104,21 @@ export function RulesWizard({
     try {
       // Exclude the bin, exactly as the runner does, so the number shown is
       // the number the rule would act on rather than an inflated one.
-      const result = await api.resolveQuery(accountId, `${query} -in:trash`)
-      setMatch({ count: result.count, truncated: result.truncated })
+      /*
+       * Every chosen mailbox, added up. One number for a rule that will run
+       * in several places is the only figure that answers "what will this
+       * clear" — a count from the first account would understate it silently.
+       */
+      const results = await Promise.all(
+        chosen.map((account) =>
+          api.resolveQuery(account.id, `${query} -in:trash`),
+        ),
+      )
+
+      setMatch({
+        count: results.reduce((sum, result) => sum + result.count, 0),
+        truncated: results.some((result) => result.truncated),
+      })
       setStep('check')
     } catch (caught) {
       setError(
@@ -89,7 +136,11 @@ export function RulesWizard({
     setError(null)
 
     try {
-      await api.createRule({ accountId, query, schedule })
+      // One rule per mailbox: the row holds a single account, and a rule that
+      // is really several should be several — pausable and auditable apiece.
+      for (const account of chosen) {
+        await api.createRule({ accountId: account.id, query, schedule })
+      }
       await onCreated()
       restart()
     } catch (caught) {
@@ -129,18 +180,19 @@ export function RulesWizard({
 
           {accounts.length > 1 && (
             <>
-              <span className="formlabel">Account</span>
-              <Select
-                label="Account"
-                value={accountId}
-                options={accounts.map((account) => ({
-                  value: account.id,
-                  label: account.gmailAddress,
-                }))}
-                onChange={setAccountId}
+              <span className="formlabel">Mailboxes</span>
+              <AccountPicker
+                label="Mailboxes this rule covers"
+                accounts={accounts}
+                selected={accountIds}
+                onChange={setAccountIds}
+                requireOne
               />
             </>
           )}
+
+          <span className="formlabel">Senders</span>
+          <SenderPicker accountIds={accountIds} selected={senders} onChange={setSenders} />
 
           <MailFilters
             filters={filters}
@@ -154,10 +206,10 @@ export function RulesWizard({
             A rule with no filter would trash the entire mailbox on a
             schedule. The server refuses it too; this just says so earlier.
           */}
-          {!hasAnyFilter(filters) && (
+          {!hasCondition && (
             <p className="hint">
-              Choose at least one filter. A rule with nothing set would match
-              every message in the account.
+              Choose at least one filter or sender. A rule with nothing set
+              would match every message in the mailbox.
             </p>
           )}
         </>

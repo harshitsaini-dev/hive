@@ -8,6 +8,7 @@ import {
   type StructuredSearch,
 } from './api.js'
 import type { MailboxView } from './AppShell.js'
+import { AccountPicker } from './AccountPicker.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { DatePicker } from './DatePicker.js'
 import {
@@ -161,7 +162,8 @@ export function AnalyticsPanel({
     accountId?: string
   }) => void
 }) {
-  const [accountId, setAccountId] = useState('')
+  /** Which mailboxes to measure. Empty means all of them. */
+  const [accountIds, setAccountIds] = useState<string[]>([])
   const [olderThan, setOlderThan] = useState('')
   const [after, setAfter] = useState('')
   const [before, setBefore] = useState('')
@@ -226,7 +228,8 @@ export function AnalyticsPanel({
         if (cancelled) return
 
         if (run?.result) {
-          setAccountId(run.filters.accountId ?? run.accountId ?? '')
+          const saved = run.filters.accountIds ?? run.accountId ?? ''
+        setAccountIds(saved ? saved.split(',').filter(Boolean) : [])
           setOlderThan(run.filters.olderThan ?? '')
           setAfter(run.filters.after ?? '')
           setBefore(run.filters.before ?? '')
@@ -234,7 +237,10 @@ export function AnalyticsPanel({
 
           setAnalysis(run.result)
           setRanAt(run.finishedAt)
-          setScope({ accountId: run.accountId ?? '', query: run.query })
+          setScope({
+          accountId: run.filters.accountIds ?? run.accountId ?? '',
+          query: run.query,
+        })
         }
 
         /*
@@ -363,10 +369,16 @@ export function AnalyticsPanel({
     try {
       const query = buildQuery()
       const { jobId } = await api.analyze({
-        accountId: accountId || undefined,
+        accountIds,
         query,
         scanLimit: Number(scanLimit),
-        filters: { accountId, olderThan, after, before, scanLimit },
+        filters: {
+          accountIds: accountIds.join(','),
+          olderThan,
+          after,
+          before,
+          scanLimit,
+        },
         scope: buildScope(),
       })
 
@@ -376,7 +388,7 @@ export function AnalyticsPanel({
       // Replaced in one step, so the panel never shows half of each run.
       setAnalysis(result)
       setRanAt(new Date().toISOString())
-      setScope({ accountId, query })
+      setScope({ accountId: accountIds.join(','), query })
       setSelected(new Set())
       setVisible(SENDER_PAGE)
     } catch (caught) {
@@ -413,10 +425,11 @@ export function AnalyticsPanel({
      * figure of 65 that belongs to one account must not clear 200 across
      * three — the number on screen is the promise being kept.
      */
-    const scopeId = onlyAccount || accountId
-    const accountsToClear = scopeId
-      ? accounts.filter((account) => account.id === scopeId)
-      : accounts
+    const scopeIds = onlyAccount ? [onlyAccount] : accountIds
+    const accountsToClear =
+      scopeIds.length > 0
+        ? accounts.filter((account) => scopeIds.includes(account.id))
+        : accounts
 
     /*
      * Progress, because this is slow and looked broken.
@@ -567,7 +580,7 @@ export function AnalyticsPanel({
   const viewPatch = {
     hasAttachment: onlyWith === 'with',
     raw: onlyWith === 'without' ? '-has:attachment' : '',
-    accountId: onlyAccount || accountId,
+    accountId: onlyAccount || (accountIds.length === 1 ? accountIds[0] : ''),
   }
   const allTicked = shown.length > 0 && chosen.length === shown.length
   const top = shown[0]?.count ?? 0
@@ -581,7 +594,7 @@ export function AnalyticsPanel({
   const stale =
     analysis !== null &&
     scope !== null &&
-    (scope.accountId !== accountId || scope.query !== buildQuery())
+    (scope.accountId !== accountIds.join(',') || scope.query !== buildQuery())
 
   return (
     <aside className="reader analytics" aria-label="Mailbox analysis">
@@ -602,18 +615,17 @@ export function AnalyticsPanel({
           control that appears only once a second account exists is a control
           nobody knows is there.
         */}
-        <Select
-          label="Account to analyse"
+        {/*
+          Searchable, and more than one. At forty mailboxes a plain dropdown
+          is a list you scroll blindly, and "analyse these five" could not be
+          asked at all.
+        */}
+        <AccountPicker
+          label="Accounts to analyse"
           className="analytics__field"
-          value={accountId}
-          options={[
-            { value: '', label: 'All connected accounts' },
-            ...accounts.map((account) => ({
-              value: account.id,
-              label: account.gmailAddress,
-            })),
-          ]}
-          onChange={setAccountId}
+          accounts={accounts}
+          selected={accountIds}
+          onChange={setAccountIds}
         />
 
         <Select

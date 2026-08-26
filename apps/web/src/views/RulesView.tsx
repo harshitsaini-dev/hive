@@ -15,7 +15,7 @@ export function RulesView({
   onChanged: () => Promise<void> | void
 }) {
   return (
-    <section className="view view--wide">
+    <section className="view view--wide view--rules">
       <header className="view__head">
         <h1>
           <ScheduleIcon size={20} />
@@ -36,15 +36,21 @@ export function RulesView({
       ) : (
         <>
           {/*
-            Rules first, index second.
-            Background work lives together — a cleanup rule and the index are
-            both things Hive does while nobody is watching — but the index
-            draws a row per connected mailbox, and nineteen of those pushed
-            the thing this page is named after off the bottom of the screen.
-            The shorter, and the reason anyone came here, goes on top.
+            Side by side where there is room, rules on the right.
+            The index draws a row per connected mailbox — forty of them — so
+            stacked, whichever card went second was effectively hidden. In two
+            columns neither is buried, and the long list has somewhere to be
+            long. Below 68rem they stack again, rules first, because on a
+            phone the top of the page is the only place anyone looks.
           */}
-          <RulesPanel accounts={accounts} />
-          <IndexingPanel accounts={accounts} onChanged={onChanged} />
+          <div className="rulesgrid">
+            <div className="rulesgrid__index">
+              <IndexingPanel accounts={accounts} onChanged={onChanged} />
+            </div>
+            <div className="rulesgrid__rules">
+              <RulesPanel accounts={accounts} />
+            </div>
+          </div>
         </>
       )}
     </section>
